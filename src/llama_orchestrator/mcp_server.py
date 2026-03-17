@@ -104,8 +104,20 @@ def create_mcp_server(
         catalog.upsert_profile(profile)
         return {"ok": True, "profile": profile.model_dump(mode="json")}
 
+    @mcp.tool(name="llama_update_profile", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def update_profile(params: dict[str, Any]) -> dict[str, Any]:
+        profile = LoadProfile.model_validate(params)
+        catalog.upsert_profile(profile)
+        return {"ok": True, "profile": profile.model_dump(mode="json")}
+
     @mcp.tool(name="llama_create_preset", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
     async def create_preset(params: dict[str, Any]) -> dict[str, Any]:
+        preset = GenerationPreset.model_validate(params)
+        catalog.upsert_preset(preset)
+        return {"ok": True, "preset": preset.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_update_preset", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def update_preset(params: dict[str, Any]) -> dict[str, Any]:
         preset = GenerationPreset.model_validate(params)
         catalog.upsert_preset(preset)
         return {"ok": True, "preset": preset.model_dump(mode="json")}
@@ -124,6 +136,12 @@ def create_mcp_server(
 
     @mcp.tool(name="llama_create_alias", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
     async def create_alias(params: dict[str, Any]) -> dict[str, Any]:
+        alias = AliasDefinition.model_validate(params)
+        catalog.upsert_alias(alias)
+        return {"ok": True, "alias": alias.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_update_alias", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def update_alias(params: dict[str, Any]) -> dict[str, Any]:
         alias = AliasDefinition.model_validate(params)
         catalog.upsert_alias(alias)
         return {"ok": True, "alias": alias.model_dump(mode="json")}
@@ -176,8 +194,13 @@ def create_mcp_server(
     @mcp.tool(name="llama_delete_alias", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def delete_alias(params: dict[str, Any]) -> dict[str, Any]:
         alias_id = str(params["alias_id"])
+        unloaded = []
+        for runtime in list(runtime_manager.list_runtimes()):
+            if runtime.alias_id == alias_id:
+                await runtime_manager.unload_runtime(runtime.runtime_key)
+                unloaded.append(runtime.runtime_key)
         catalog.delete_alias(alias_id)
-        return {"ok": True, "alias_id": alias_id}
+        return {"ok": True, "alias_id": alias_id, "unloaded": unloaded}
 
     @mcp.tool(name="llama_list_benchmarks", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def list_benchmarks(params: dict[str, Any] | None = None) -> dict[str, Any]:

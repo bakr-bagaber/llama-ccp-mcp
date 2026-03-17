@@ -64,3 +64,43 @@ def test_catalog_prevents_deleting_model_in_use(sandbox_path: Path) -> None:
 
     with pytest.raises(CatalogError):
         store.delete_model("demo-model")
+
+
+def test_catalog_prevents_deleting_profile_in_use(sandbox_path: Path) -> None:
+    catalog_path = sandbox_path / "catalog.yaml"
+    store = CatalogStore(catalog_path)
+    store.load()
+    store.upsert_model(BaseModelDefinition(id="demo-model", display_name="Demo", local_path=sandbox_path / "demo.gguf"))
+    store.upsert_profile(LoadProfile(id="balanced"))
+    store.upsert_preset(GenerationPreset(id="default"))
+    store.upsert_alias(
+        AliasDefinition(
+            id="demo/alias",
+            base_model_id="demo-model",
+            load_profile_id="balanced",
+            preset_id="default",
+        )
+    )
+
+    with pytest.raises(CatalogError):
+        store.delete_profile("balanced")
+
+
+def test_catalog_prevents_deleting_preset_in_use(sandbox_path: Path) -> None:
+    catalog_path = sandbox_path / "catalog.yaml"
+    store = CatalogStore(catalog_path)
+    store.load()
+    store.upsert_model(BaseModelDefinition(id="demo-model", display_name="Demo", local_path=sandbox_path / "demo.gguf"))
+    store.upsert_profile(LoadProfile(id="balanced"))
+    store.upsert_preset(GenerationPreset(id="default"))
+    store.upsert_alias(
+        AliasDefinition(
+            id="demo/alias",
+            base_model_id="demo-model",
+            load_profile_id="balanced",
+            preset_id="default",
+        )
+    )
+
+    with pytest.raises(CatalogError):
+        store.delete_preset("default")

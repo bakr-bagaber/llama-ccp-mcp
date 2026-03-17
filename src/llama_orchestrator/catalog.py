@@ -96,10 +96,18 @@ class CatalogStore:
         self.save()
 
     def delete_profile(self, profile_id: str) -> None:
+        dependent_aliases = [alias.id for alias in self.document.aliases if alias.load_profile_id == profile_id]
+        if dependent_aliases:
+            joined = ", ".join(sorted(dependent_aliases))
+            raise CatalogError(f"Profile '{profile_id}' is still used by aliases: {joined}")
         self.document.profiles = [item for item in self.document.profiles if item.id != profile_id]
         self.save()
 
     def delete_preset(self, preset_id: str) -> None:
+        dependent_aliases = [alias.id for alias in self.document.aliases if alias.preset_id == preset_id]
+        if dependent_aliases:
+            joined = ", ".join(sorted(dependent_aliases))
+            raise CatalogError(f"Preset '{preset_id}' is still used by aliases: {joined}")
         self.document.presets = [item for item in self.document.presets if item.id != preset_id]
         self.save()
 
