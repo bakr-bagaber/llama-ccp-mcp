@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+test-workspace/
+.pytest_tmp/
+.test-work/
+pytest-cache-files-*/
+pytest_temp/
+UsersbakrbagaAppDataLocalTemppytest-codex/
+state/pytest-tmp/
+state/

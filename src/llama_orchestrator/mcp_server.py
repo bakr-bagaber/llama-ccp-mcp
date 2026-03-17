@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .catalog import CatalogStore
+from .downloads import download_model
 from .hardware import HardwareProbe
 from .models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
 from .router import RouteContext
@@ -41,6 +42,15 @@ def create_mcp_server(
         model = BaseModelDefinition.model_validate(params)
         catalog.upsert_model(model)
         return {"ok": True, "model": model.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_download_model", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+    async def download_remote_model(params: dict[str, Any]) -> dict[str, Any]:
+        model = BaseModelDefinition.model_validate(params["model"])
+        destination_dir = settings.catalog_path.parent / "models"
+        downloaded_path = download_model(model, destination_dir)
+        model.local_path = downloaded_path
+        catalog.upsert_model(model)
+        return {"ok": True, "model": model.model_dump(mode="json"), "local_path": str(downloaded_path)}
 
     @mcp.tool(name="llama_create_profile", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
     async def create_profile(params: dict[str, Any]) -> dict[str, Any]:
@@ -93,6 +103,12 @@ def create_mcp_server(
         alias.pinned = pinned
         catalog.upsert_alias(alias)
         return {"ok": True, "alias_id": alias_id, "pinned": pinned}
+
+    @mcp.tool(name="llama_delete_alias", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def delete_alias(params: dict[str, Any]) -> dict[str, Any]:
+        alias_id = str(params["alias_id"])
+        catalog.delete_alias(alias_id)
+        return {"ok": True, "alias_id": alias_id}
 
     @mcp.tool(name="llama_list_benchmarks", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def list_benchmarks(params: dict[str, Any] | None = None) -> dict[str, Any]:
