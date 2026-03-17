@@ -24,6 +24,10 @@ class AppSettings(StrictModel):
     cuda_executable: str | None = None
     vulkan_executable: str | None = None
     sycl_executable: str | None = None
+    cpu_bench_executable: str | None = None
+    cuda_bench_executable: str | None = None
+    vulkan_bench_executable: str | None = None
+    sycl_bench_executable: str | None = None
     policy: MemoryPolicy = Field(default_factory=MemoryPolicy)
 
     @classmethod
@@ -42,6 +46,10 @@ class AppSettings(StrictModel):
             cuda_executable=os.getenv("LLAMA_SERVER_CUDA") or None,
             vulkan_executable=os.getenv("LLAMA_SERVER_VULKAN") or None,
             sycl_executable=os.getenv("LLAMA_SERVER_SYCL") or None,
+            cpu_bench_executable=os.getenv("LLAMA_BENCH_CPU") or None,
+            cuda_bench_executable=os.getenv("LLAMA_BENCH_CUDA") or None,
+            vulkan_bench_executable=os.getenv("LLAMA_BENCH_VULKAN") or None,
+            sycl_bench_executable=os.getenv("LLAMA_BENCH_SYCL") or None,
             policy=MemoryPolicy(
                 min_free_system_ram_bytes=int(os.getenv("LLAMA_ORCH_MIN_FREE_RAM", str(4 * 1024**3))),
                 min_free_dgpu_vram_bytes=int(os.getenv("LLAMA_ORCH_MIN_FREE_DGPU_VRAM", str(1 * 1024**3))),
@@ -79,6 +87,28 @@ class AppSettings(StrictModel):
             Backend.CUDA: [Path(r"C:\llama.cpp\cuda13\llama-server.exe"), Path(r"C:\llama.cpp\cuda\llama-server.exe")],
             Backend.VULKAN: [Path(r"C:\llama.cpp\vulkan\llama-server.exe")],
             Backend.SYCL: [Path(r"C:\llama.cpp\sycl\llama-server.exe")],
+        }
+        for candidate in defaults[backend]:
+            if candidate.exists():
+                return str(candidate)
+        return None
+
+    def bench_executable_for_backend(self, backend: Backend) -> str | None:
+        mapping = {
+            Backend.CPU: self.cpu_bench_executable,
+            Backend.CUDA: self.cuda_bench_executable,
+            Backend.VULKAN: self.vulkan_bench_executable,
+            Backend.SYCL: self.sycl_bench_executable,
+        }
+        explicit = mapping[backend]
+        if explicit:
+            return explicit
+
+        defaults = {
+            Backend.CPU: [Path(r"C:\llama.cpp\cpu\llama-bench.exe")],
+            Backend.CUDA: [Path(r"C:\llama.cpp\cuda13\llama-bench.exe"), Path(r"C:\llama.cpp\cuda\llama-bench.exe")],
+            Backend.VULKAN: [Path(r"C:\llama.cpp\vulkan\llama-bench.exe")],
+            Backend.SYCL: [Path(r"C:\llama.cpp\sycl\llama-bench.exe")],
         }
         for candidate in defaults[backend]:
             if candidate.exists():

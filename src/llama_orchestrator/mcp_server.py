@@ -33,7 +33,7 @@ def create_mcp_server(
         raise RuntimeError("The 'mcp' package is not installed. Install dependencies before starting the MCP server.")
 
     mcp = FastMCP("llama_orchestrator")
-    benchmark_service = BenchmarkService(state)
+    benchmark_service = BenchmarkService(settings, catalog, state)
 
     @mcp.tool(name="llama_list_models", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def list_models() -> dict[str, Any]:
@@ -154,6 +154,15 @@ def create_mcp_server(
             peak_ram_bytes=int(params["peak_ram_bytes"]) if params.get("peak_ram_bytes") is not None else None,
             peak_vram_bytes=int(params["peak_vram_bytes"]) if params.get("peak_vram_bytes") is not None else None,
             metadata=dict(params.get("metadata", {})),
+        )
+        return {"ok": True, "benchmark": record.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_run_benchmark", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def run_benchmark(params: dict[str, Any]) -> dict[str, Any]:
+        record = benchmark_service.run_llama_bench(
+            alias_id=str(params["alias_id"]),
+            backend=params["backend"],
+            n_gpu_layers=int(params["n_gpu_layers"]) if params.get("n_gpu_layers") is not None else None,
         )
         return {"ok": True, "benchmark": record.model_dump(mode="json")}
 
