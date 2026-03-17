@@ -68,7 +68,7 @@ class RuntimeManager:
             if not decision.selected:
                 raise RuntimeLaunchError(decision.reason_summary)
             await self._evict_if_needed(alias, decision.selected)
-            runtime = await self._launch_runtime(alias, model.local_path, profile, decision.selected)
+            runtime = await self._launch_runtime(alias, model, profile, decision.selected)
             runtime.last_used_at = self._now()
             self._runtimes[runtime.runtime_key] = runtime
             return runtime
@@ -149,10 +149,11 @@ class RuntimeManager:
     async def _launch_runtime(
         self,
         alias: AliasDefinition,
-        model_path: Path | None,
+        model,
         profile,
         selected,
     ) -> RuntimeRecord:
+        model_path: Path | None = model.local_path
         executable = self._resolve_executable(selected.backend)
         if not executable:
             raise RuntimeLaunchError(f"No executable is configured or discoverable for backend '{selected.backend.value}'.")
@@ -173,6 +174,11 @@ class RuntimeManager:
             "--ctx-size",
             str(profile.context_size),
         ]
+        # Qwen chat templates work best through llama.cpp's Jinja support,
+        # and reasoning-format deepseek maps the separate reasoning field
+        # that many OpenAI-compatible clients now expect.
+        if (model.family or "").lower().startswith("qwen"):
+            command.extend(["--jinja", "--reasoning-format", "deepseek"])
         if profile.threads:
             command.extend(["--threads", str(profile.threads)])
         if profile.batch_size:

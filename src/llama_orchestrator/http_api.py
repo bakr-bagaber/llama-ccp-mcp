@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .catalog import CatalogError, CatalogStore
 from .hardware import HardwareProbe
-from .models import RuntimeRecord
+from .models import ReasoningMode, RuntimeRecord
 from .runtime import RuntimeLaunchError, RuntimeManager
 from .settings import AppSettings
 from .state import StateStore
@@ -88,24 +88,26 @@ def create_app(
     @app.post("/v1/chat/completions", dependencies=[Depends(require_api_key)])
     async def chat_completions(payload: dict[str, Any]) -> Any:
         runtime, proxied_payload = await _prepare_openai_chat(payload)
-        return await _proxy_openai(runtime, "/v1/chat/completions", proxied_payload, bool(payload.get("stream")))
+        return await _proxy_openai(runtime, "/v1/chat/completions", proxied_payload, bool(payload.get("stream")), payload["model"])
 
     @app.post("/v1/completions", dependencies=[Depends(require_api_key)])
     async def completions(payload: dict[str, Any]) -> Any:
         if any(key in payload for key in ("tools", "tool_choice", "parallel_tool_calls")):
             raise HTTPException(status_code=400, detail="The legacy /v1/completions endpoint does not support tool use.")
         runtime = await _ensure_runtime(payload["model"])
-        return await _proxy_openai(runtime, "/v1/completions", payload, bool(payload.get("stream")))
+        proxied_payload = _apply_preset_defaults(catalog, payload["model"], dict(payload))
+        return await _proxy_openai(runtime, "/v1/completions", proxied_payload, bool(payload.get("stream")), payload["model"])
 
     @app.post("/v1/embeddings", dependencies=[Depends(require_api_key)])
     async def embeddings(payload: dict[str, Any]) -> Any:
         runtime = await _ensure_runtime(payload["model"])
-        return await _proxy_openai(runtime, "/v1/embeddings", payload, False)
+        proxied_payload = _apply_preset_defaults(catalog, payload["model"], dict(payload))
+        return await _proxy_openai(runtime, "/v1/embeddings", proxied_payload, False, payload["model"])
 
     @app.post("/v1/responses", dependencies=[Depends(require_api_key)])
     async def responses(payload: dict[str, Any]) -> Any:
         runtime, chat_payload = await _prepare_openai_response(payload)
-        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, False)
+        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, False, payload["model"])
         if isinstance(response, JSONResponse):
             body = json.loads(response.body)
             return JSONResponse(_chat_completion_to_response(body))
@@ -120,7 +122,7 @@ def create_app(
         if not anthropic_version:
             raise HTTPException(status_code=400, detail="Anthropic requests must include the anthropic-version header.")
         runtime, chat_payload = await _prepare_anthropic_messages(payload, anthropic_beta)
-        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, bool(payload.get("stream")))
+        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, bool(payload.get("stream")), payload["model"])
         if isinstance(response, JSONResponse):
             body = json.loads(response.body)
             return JSONResponse(_chat_completion_to_anthropic(body, payload))
@@ -153,7 +155,7 @@ def create_app(
         if "model" not in payload:
             raise HTTPException(status_code=400, detail="The 'model' field is required.")
         runtime = await _ensure_runtime(payload["model"])
-        return runtime, dict(payload)
+        return runtime, _apply_preset_defaults(catalog, payload["model"], dict(payload))
 
     async def _prepare_openai_response(payload: dict[str, Any]) -> tuple[RuntimeRecord, dict[str, Any]]:
         model = payload.get("model")
@@ -179,6 +181,7 @@ def create_app(
             "tool_choice": payload.get("tool_choice"),
             "stream": bool(payload.get("stream")),
         }
+        chat_payload = _apply_preset_defaults(catalog, model, chat_payload)
         _compact_none(chat_payload)
         return runtime, chat_payload
 
@@ -201,10 +204,11 @@ def create_app(
             "stream": bool(payload.get("stream")),
             "metadata": {"anthropic_beta": anthropic_beta} if anthropic_beta else None,
         }
+        chat_payload = _apply_preset_defaults(catalog, model, chat_payload)
         _compact_none(chat_payload)
         return runtime, chat_payload
 
-    async def _proxy_openai(runtime: RuntimeRecord, path: str, payload: dict[str, Any], stream: bool) -> Any:
+    async def _proxy_openai(runtime: RuntimeRecord, path: str, payload: dict[str, Any], stream: bool, requested_model: str) -> Any:
         try:
             if stream:
                 async def iterator():
@@ -219,9 +223,12 @@ def create_app(
             response = await runtime_manager.post_json(runtime, path, payload)
             if response.status_code >= 400:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return JSONResponse(response.json())
+            body = response.json()
+            body["model"] = requested_model
+            return JSONResponse(body)
         except httpx.HTTPError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            detail = str(exc).strip() or exc.__class__.__name__
+            raise HTTPException(status_code=502, detail=detail) from exc
 
     def _chat_completion_to_response(body: dict[str, Any]) -> dict[str, Any]:
         message = ((body.get("choices") or [{}])[0]).get("message", {})
@@ -246,6 +253,65 @@ def create_app(
         }
 
     return app
+
+
+def _apply_preset_defaults(catalog: CatalogStore, model_alias: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Merge generation preset defaults without overriding explicit user input."""
+    try:
+        _alias, model, _profile, preset = catalog.resolve_alias(model_alias)
+    except Exception:
+        return payload
+
+    field_mapping = {
+        "temperature": preset.temperature,
+        "top_p": preset.top_p,
+        "top_k": preset.top_k,
+        "min_p": preset.min_p,
+        "repeat_penalty": preset.repeat_penalty,
+        "presence_penalty": preset.presence_penalty,
+        "frequency_penalty": preset.frequency_penalty,
+        "max_tokens": preset.max_tokens,
+        "stop": preset.stop or None,
+        "grammar": preset.grammar,
+    }
+    for key, value in field_mapping.items():
+        if key not in payload and value is not None:
+            payload[key] = value
+    for key, value in preset.request_overrides.items():
+        payload.setdefault(key, value)
+    _apply_reasoning_hint(model.family, preset.reasoning_mode, payload)
+    return payload
+
+
+def _apply_reasoning_hint(model_family: str | None, reasoning_mode: ReasoningMode, payload: dict[str, Any]) -> None:
+    """Inject model-family-specific thinking controls.
+
+    Qwen documents `/no_think` and `/think` for earlier Qwen3-family models.
+    We use those hints as a best-effort bridge so aliases can express
+    thinking policy even when the upstream API does not expose a direct flag.
+    """
+    family = (model_family or "").lower()
+    if not family.startswith("qwen"):
+        return
+
+    if reasoning_mode is ReasoningMode.OFF:
+        directive = "/no_think"
+    elif reasoning_mode in {ReasoningMode.LIGHT, ReasoningMode.DEEP, ReasoningMode.MODEL_NATIVE}:
+        directive = "/think"
+    else:
+        return
+
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return
+
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        existing = str(messages[0].get("content", ""))
+        if directive not in existing:
+            messages[0]["content"] = f"{directive}\n{existing}".strip()
+        return
+
+    messages.insert(0, {"role": "system", "content": directive})
 
 
 def _compact_none(payload: dict[str, Any]) -> None:

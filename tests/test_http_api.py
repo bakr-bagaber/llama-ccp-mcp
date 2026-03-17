@@ -6,8 +6,8 @@ from fastapi.testclient import TestClient
 
 from llama_orchestrator.catalog import CatalogStore
 from llama_orchestrator.hardware import HardwareProbe
-from llama_orchestrator.http_api import _anthropic_messages_to_openai_messages, _chat_completion_to_anthropic, create_app
-from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
+from llama_orchestrator.http_api import _anthropic_messages_to_openai_messages, _apply_preset_defaults, _chat_completion_to_anthropic, create_app
+from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile, ReasoningMode
 from llama_orchestrator.router import Router
 from llama_orchestrator.runtime import RuntimeManager
 from llama_orchestrator.settings import AppSettings
@@ -115,3 +115,41 @@ def test_chat_completion_to_anthropic_maps_tool_calls() -> None:
     assert response["stop_reason"] == "tool_use"
     assert response["content"][0]["type"] == "tool_use"
     assert response["content"][0]["input"]["q"] == "abc"
+
+
+def test_preset_defaults_add_qwen_no_think_directive(sandbox_path: Path) -> None:
+    settings = AppSettings(
+        catalog_path=sandbox_path / "catalog.yaml",
+        state_path=sandbox_path / "orchestrator.db",
+    )
+    settings.ensure_directories()
+    catalog = CatalogStore(settings.catalog_path)
+    catalog.load()
+    catalog.upsert_model(
+        BaseModelDefinition(
+            id="qwen",
+            display_name="Qwen",
+            local_path=sandbox_path / "demo.gguf",
+            family="qwen",
+        )
+    )
+    catalog.upsert_profile(LoadProfile(id="balanced"))
+    catalog.upsert_preset(GenerationPreset(id="precise", reasoning_mode=ReasoningMode.OFF, temperature=0.1))
+    catalog.upsert_alias(
+        AliasDefinition(
+            id="qwen/alias",
+            base_model_id="qwen",
+            load_profile_id="balanced",
+            preset_id="precise",
+        )
+    )
+
+    payload = _apply_preset_defaults(
+        catalog,
+        "qwen/alias",
+        {"model": "qwen/alias", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert payload["temperature"] == 0.1
+    assert payload["messages"][0]["role"] == "system"
+    assert "/no_think" in payload["messages"][0]["content"]

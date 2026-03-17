@@ -1,4 +1,53 @@
-models: []
-profiles: []
-presets: []
-aliases: []
+models:
+  - id: qwen3.5-0.8b-q8
+    display_name: Qwen 3.5 0.8B Q8
+    source: local
+    local_path: C:\llama.cpp\models\Qwen3.5-0.8B-UD-Q8_K_XL.gguf
+    family: qwen
+    quantization: Q8_K_XL
+    capabilities:
+      - chat
+      - completion
+      - tools
+    size_bytes: 1186443520
+    estimated_ram_bytes: 2147483648
+    estimated_vram_bytes: 1610612736
+profiles:
+  - id: cpu-safe
+    description: Conservative CPU profile for reliable local validation.
+    context_size: 8192
+    threads: 8
+    backend_preference: force_cpu
+    gpu_layers: 0
+    idle_unload_seconds: 180
+  - id: auto-balanced
+    description: Let the router choose the best available backend.
+    context_size: 8192
+    threads: 8
+    backend_preference: auto
+    gpu_layers: 99
+    idle_unload_seconds: 180
+presets:
+  - id: precise
+    description: Low-temperature coding preset.
+    temperature: 0.1
+    top_p: 0.95
+    max_tokens: 256
+    reasoning_mode: "off"
+aliases:
+  - id: qwen3.5-0.8b/precise-cpu
+    base_model_id: qwen3.5-0.8b-q8
+    load_profile_id: cpu-safe
+    preset_id: precise
+    capabilities:
+      - chat
+      - completion
+      - tools
+  - id: qwen3.5-0.8b/precise-auto
+    base_model_id: qwen3.5-0.8b-q8
+    load_profile_id: auto-balanced
+    preset_id: precise
+    capabilities:
+      - chat
+      - completion
+      - tools

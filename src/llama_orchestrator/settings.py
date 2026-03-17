@@ -58,10 +58,29 @@ class AppSettings(StrictModel):
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def executable_for_backend(self, backend: Backend) -> str | None:
+        """Resolve a backend executable.
+
+        We prefer explicit environment overrides first. If none are set,
+        we fall back to common local Windows llama.cpp install locations
+        so the project works out of the box on this machine.
+        """
         mapping = {
             Backend.CPU: self.cpu_executable,
             Backend.CUDA: self.cuda_executable,
             Backend.VULKAN: self.vulkan_executable,
             Backend.SYCL: self.sycl_executable,
         }
-        return mapping[backend]
+        explicit = mapping[backend]
+        if explicit:
+            return explicit
+
+        defaults = {
+            Backend.CPU: [Path(r"C:\llama.cpp\cpu\llama-server.exe")],
+            Backend.CUDA: [Path(r"C:\llama.cpp\cuda13\llama-server.exe"), Path(r"C:\llama.cpp\cuda\llama-server.exe")],
+            Backend.VULKAN: [Path(r"C:\llama.cpp\vulkan\llama-server.exe")],
+            Backend.SYCL: [Path(r"C:\llama.cpp\sycl\llama-server.exe")],
+        }
+        for candidate in defaults[backend]:
+            if candidate.exists():
+                return str(candidate)
+        return None
