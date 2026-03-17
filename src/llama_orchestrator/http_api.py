@@ -107,6 +107,8 @@ def create_app(
     @app.post("/v1/responses", dependencies=[Depends(require_api_key)])
     async def responses(payload: dict[str, Any]) -> Any:
         runtime, chat_payload = await _prepare_openai_response(payload)
+        if payload.get("stream"):
+            return _proxy_responses_stream(runtime, chat_payload, payload)
         response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, False, payload["model"])
         if isinstance(response, JSONResponse):
             body = json.loads(response.body)
@@ -249,29 +251,49 @@ def create_app(
 
         return StreamingResponse(iterator(), media_type="text/event-stream")
 
-    def _chat_completion_to_response(body: dict[str, Any]) -> dict[str, Any]:
-        message = ((body.get("choices") or [{}])[0]).get("message", {})
-        output_blocks: list[dict[str, Any]] = []
-        if message.get("content"):
-            output_blocks.append({"type": "output_text", "text": message["content"]})
-        for tool_call in message.get("tool_calls", []):
-            output_blocks.append(
-                {
-                    "type": "tool_call",
-                    "id": tool_call.get("id"),
-                    "name": tool_call.get("function", {}).get("name"),
-                    "arguments": tool_call.get("function", {}).get("arguments"),
-                }
-            )
-        return {
-            "id": body.get("id", "resp_local"),
-            "object": "response",
-            "output": output_blocks,
-            "model": body.get("model"),
-            "usage": body.get("usage", {}),
-        }
+    def _proxy_responses_stream(runtime: RuntimeRecord, payload: dict[str, Any], request_payload: dict[str, Any]) -> StreamingResponse:
+        async def iterator() -> AsyncIterator[str]:
+            try:
+                async with runtime_manager.stream_json(runtime, "/v1/chat/completions", payload) as response:
+                    response.raise_for_status()
+                    async for event in _openai_stream_to_responses_events(response.aiter_lines(), request_payload):
+                        yield event
+            except httpx.HTTPError as exc:
+                yield _responses_sse_event(
+                    "response.failed",
+                    {
+                        "type": "response.failed",
+                        "error": {"type": "server_error", "message": str(exc).strip() or exc.__class__.__name__},
+                    },
+                )
+
+        return StreamingResponse(iterator(), media_type="text/event-stream")
 
     return app
+
+
+def _chat_completion_to_response(body: dict[str, Any]) -> dict[str, Any]:
+    message = ((body.get("choices") or [{}])[0]).get("message", {})
+    output_blocks: list[dict[str, Any]] = []
+    if message.get("content"):
+        output_blocks.append({"type": "output_text", "text": message["content"]})
+    for tool_call in message.get("tool_calls", []):
+        output_blocks.append(
+            {
+                "type": "tool_call",
+                "id": tool_call.get("id"),
+                "name": tool_call.get("function", {}).get("name"),
+                "arguments": tool_call.get("function", {}).get("arguments"),
+            }
+        )
+    return {
+        "id": body.get("id", "resp_local"),
+        "object": "response",
+        "status": "completed",
+        "output": output_blocks,
+        "model": body.get("model"),
+        "usage": body.get("usage", {}),
+    }
 
 
 def _apply_preset_defaults(catalog: CatalogStore, model_alias: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -639,4 +661,161 @@ async def _openai_stream_to_anthropic_events(
 
 
 def _anthropic_sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _openai_stream_to_responses_events(
+    lines: AsyncIterator[str],
+    request_payload: dict[str, Any],
+) -> AsyncIterator[str]:
+    """Translate chat-completions SSE into Responses-style SSE."""
+    response_id = "resp_local"
+    output_index = 0
+    text_started = False
+    text_accumulator = ""
+    tool_calls: dict[int, dict[str, Any]] = {}
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    created = False
+
+    async for raw_line in lines:
+        line = raw_line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload = line.removeprefix("data:").strip()
+        if payload == "[DONE]":
+            break
+        chunk = json.loads(payload)
+        response_id = chunk.get("id", response_id)
+        chunk_usage = chunk.get("usage", {})
+        if chunk_usage:
+            usage["prompt_tokens"] = int(chunk_usage.get("prompt_tokens", usage["prompt_tokens"]) or 0)
+            usage["completion_tokens"] = int(chunk_usage.get("completion_tokens", usage["completion_tokens"]) or 0)
+            usage["total_tokens"] = int(chunk_usage.get("total_tokens", usage["total_tokens"]) or 0)
+        if not created:
+            created = True
+            yield _responses_sse_event(
+                "response.created",
+                {
+                    "type": "response.created",
+                    "response": {
+                        "id": response_id,
+                        "object": "response",
+                        "status": "in_progress",
+                        "model": request_payload.get("model"),
+                        "output": [],
+                    },
+                },
+            )
+
+        choice = (chunk.get("choices") or [{}])[0]
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason")
+
+        content_delta = delta.get("content")
+        if content_delta:
+            if not text_started:
+                text_started = True
+                yield _responses_sse_event(
+                    "response.output_item.added",
+                    {
+                        "type": "response.output_item.added",
+                        "output_index": output_index,
+                        "item": {"type": "message", "role": "assistant", "content": []},
+                    },
+                )
+                yield _responses_sse_event(
+                    "response.content_part.added",
+                    {
+                        "type": "response.content_part.added",
+                        "output_index": output_index,
+                        "content_index": 0,
+                        "part": {"type": "output_text", "text": ""},
+                    },
+                )
+            text_accumulator += content_delta
+            yield _responses_sse_event(
+                "response.output_text.delta",
+                {
+                    "type": "response.output_text.delta",
+                    "output_index": output_index,
+                    "content_index": 0,
+                    "delta": content_delta,
+                },
+            )
+
+        for tool_call in delta.get("tool_calls", []):
+            tool_index = int(tool_call.get("index", len(tool_calls)))
+            state = tool_calls.setdefault(
+                tool_index,
+                {"id": tool_call.get("id"), "name": "", "arguments": "", "output_index": output_index + len(tool_calls)},
+            )
+            function = tool_call.get("function", {})
+            if function.get("name"):
+                state["name"] = function["name"]
+            if tool_call.get("id"):
+                state["id"] = tool_call["id"]
+            if "started" not in state:
+                state["started"] = True
+                yield _responses_sse_event(
+                    "response.output_item.added",
+                    {
+                        "type": "response.output_item.added",
+                        "output_index": state["output_index"],
+                        "item": {
+                            "type": "tool_call",
+                            "id": state["id"] or f"tool_{tool_index}",
+                            "name": state["name"],
+                            "arguments": "",
+                        },
+                    },
+                )
+            if function.get("arguments"):
+                fragment = str(function["arguments"])
+                state["arguments"] += fragment
+                yield _responses_sse_event(
+                    "response.function_call_arguments.delta",
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "output_index": state["output_index"],
+                        "delta": fragment,
+                    },
+                )
+
+        if finish_reason:
+            if text_started:
+                yield _responses_sse_event(
+                    "response.output_text.done",
+                    {
+                        "type": "response.output_text.done",
+                        "output_index": output_index,
+                        "content_index": 0,
+                        "text": text_accumulator,
+                    },
+                )
+            for state in tool_calls.values():
+                yield _responses_sse_event(
+                    "response.function_call_arguments.done",
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "output_index": state["output_index"],
+                        "arguments": state["arguments"],
+                    },
+                )
+
+    yield _responses_sse_event(
+        "response.completed",
+        {
+            "type": "response.completed",
+            "response": {
+                "id": response_id,
+                "object": "response",
+                "status": "completed",
+                "model": request_payload.get("model"),
+                "usage": usage,
+            },
+        },
+    )
+
+
+def _responses_sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"

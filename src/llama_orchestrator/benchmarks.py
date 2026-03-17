@@ -103,6 +103,11 @@ class BenchmarkService:
         prompt_tps = float(prompt_entry.get("avg_ts") or 0.0)
         generation_tps = float(generation_entry.get("avg_ts") or 0.0)
         load_seconds = 0.0
+        verified = self._is_verified_benchmark(
+            placement=resolved_placement,
+            requested_device_ids=device_ids or [],
+            raw_entries=entries,
+        )
 
         record = BenchmarkRecord(
             alias_id=alias_id,
@@ -116,6 +121,7 @@ class BenchmarkService:
                 "raw": entries,
                 "device_ids": device_ids or [],
                 "selectors": selectors,
+                "verified": verified,
             },
         )
         self.state.add_benchmark(record)
@@ -170,6 +176,25 @@ class BenchmarkService:
         if "igpu" in kinds and "dgpu" in kinds:
             return PlacementKind.DGPU_IGPU_MIXED
         return PlacementKind.DGPU_ONLY
+
+    @staticmethod
+    def _is_verified_benchmark(
+        *,
+        placement: PlacementKind,
+        requested_device_ids: list[str],
+        raw_entries: list[dict],
+    ) -> bool:
+        if placement is not PlacementKind.DGPU_IGPU_MIXED:
+            return True
+        if len(requested_device_ids) < 2:
+            return False
+        reported_devices = {str(item.get("devices", "")).strip() for item in raw_entries if str(item.get("devices", "")).strip()}
+        if not reported_devices:
+            return False
+        # A mixed benchmark is only considered verified when llama-bench
+        # reports a combined multi-device target rather than separate
+        # single-device rows for each adapter.
+        return any("," in device_name for device_name in reported_devices)
 
     @staticmethod
     def _runtime_selector_for_backend(device, backend: Backend) -> str:

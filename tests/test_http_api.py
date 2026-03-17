@@ -14,6 +14,7 @@ from llama_orchestrator.http_api import (
     _apply_preset_defaults,
     _chat_completion_to_anthropic,
     _openai_stream_to_anthropic_events,
+    _openai_stream_to_responses_events,
     create_app,
 )
 from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile, ReasoningMode
@@ -222,3 +223,37 @@ async def test_openai_stream_is_translated_to_anthropic_events() -> None:
     assert any("event: content_block_delta" in event and '"input_json_delta"' in event for event in events)
     assert any("event: message_delta" in event and '"stop_reason": "tool_use"' in event for event in events)
     assert events[-1].startswith("event: message_stop")
+
+
+def test_chat_completion_to_response_includes_completed_status() -> None:
+    from llama_orchestrator.http_api import _chat_completion_to_response
+
+    response = _chat_completion_to_response(
+        {
+            "id": "chatcmpl_1",
+            "model": "demo/alias",
+            "choices": [{"message": {"content": "hello", "tool_calls": []}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+
+    assert response["status"] == "completed"
+    assert response["output"][0]["type"] == "output_text"
+
+
+@pytest.mark.anyio
+async def test_openai_stream_is_translated_to_responses_events() -> None:
+    async def fake_lines():
+        yield 'data: {"id":"chatcmpl_1","choices":[{"delta":{"content":"Hello"}}]}'
+        yield 'data: {"id":"chatcmpl_1","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"lookup","arguments":"{\\"q\\": "}},{"index":0,"function":{"arguments":"\\"abc\\"}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+        yield 'data: {"id":"chatcmpl_1","choices":[{"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+        yield "data: [DONE]"
+
+    events = [event async for event in _openai_stream_to_responses_events(fake_lines(), {"model": "demo/alias"})]
+
+    assert events[0].startswith("event: response.created")
+    assert any("event: response.output_item.added" in event and '"type": "message"' in event for event in events)
+    assert any("event: response.output_text.delta" in event and '"delta": "Hello"' in event for event in events)
+    assert any("event: response.function_call_arguments.delta" in event for event in events)
+    assert any("event: response.function_call_arguments.done" in event for event in events)
+    assert events[-1].startswith("event: response.completed")

@@ -164,6 +164,11 @@ class Router:
                 candidate.score += 20.0
             if candidate.support_level is SupportLevel.EXPERIMENTAL:
                 candidate.score -= 10.0
+            if candidate.placement is PlacementKind.DGPU_IGPU_MIXED and not self._has_verified_benchmark(
+                alias.id, candidate.backend, candidate.placement, context.benchmarks
+            ):
+                candidate.score -= 50.0
+                candidate.reason = f"{candidate.reason} Mixed GPU placement is still unverified on this machine."
         return candidates
 
     def _candidate(
@@ -244,9 +249,31 @@ class Router:
         benchmarks: list[BenchmarkRecord],
     ) -> float:
         for benchmark in benchmarks:
-            if benchmark.alias_id == alias_id and benchmark.backend == backend and benchmark.placement == placement:
+            if (
+                benchmark.alias_id == alias_id
+                and benchmark.backend == backend
+                and benchmark.placement == placement
+                and benchmark.metadata.get("verified", True)
+            ):
                 return benchmark.generation_tps + benchmark.prompt_tps
         return 0.0
+
+    @staticmethod
+    def _has_verified_benchmark(
+        alias_id: str,
+        backend: Backend,
+        placement: PlacementKind,
+        benchmarks: list[BenchmarkRecord],
+    ) -> bool:
+        for benchmark in benchmarks:
+            if (
+                benchmark.alias_id == alias_id
+                and benchmark.backend == backend
+                and benchmark.placement == placement
+                and benchmark.metadata.get("verified", True)
+            ):
+                return True
+        return False
 
     @staticmethod
     def _find_reusable_runtime(

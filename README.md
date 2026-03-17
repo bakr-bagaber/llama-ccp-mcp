@@ -85,4 +85,6 @@ uv run pytest -q
 - iGPU and mixed dGPU+iGPU routing are intentionally marked experimental for now.
 - Hardware inventory uses backend-agnostic ids such as `dgpu0` and `igpu0`, while also exposing backend selectors such as `cuda0` and `vulkan1` for explicit targeting and benchmarking.
 - Anthropic streaming requests are translated into Anthropic-style SSE events instead of leaking raw OpenAI-style chunks.
+- OpenAI `POST /v1/responses` streaming is translated into `response.*` SSE events.
+- Mixed Vulkan benchmark attempts are recorded conservatively: if `llama-bench` reports separate per-device rows instead of a combined run, the result is stored as unverified and does not bias routing.
 - On this machine, experimental `Vulkan0` iGPU routing has been live-validated with the local `Qwen3.5-0.8B-UD-Q8_K_XL.gguf` model.
