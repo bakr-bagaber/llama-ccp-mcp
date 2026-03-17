@@ -204,3 +204,36 @@ def test_mixed_vulkan_benchmark_is_marked_unverified_when_rows_are_per_device(sa
 
     assert record.placement == PlacementKind.DGPU_IGPU_MIXED
     assert record.metadata["verified"] is False
+
+
+def test_manual_benchmark_verification_roundtrip(sandbox_path: Path) -> None:
+    settings = AppSettings(
+        catalog_path=sandbox_path / "catalog.yaml",
+        state_path=sandbox_path / "orchestrator.db",
+    )
+    settings.ensure_directories()
+    catalog = CatalogStore(settings.catalog_path)
+    catalog.load()
+    state = StateStore(settings.state_path)
+    service = BenchmarkService(settings, catalog, state)
+
+    record = service.record_manual_benchmark(
+        alias_id="demo/alias",
+        backend=Backend.CPU,
+        placement=PlacementKind.CPU_ONLY,
+        prompt_tps=1.0,
+        generation_tps=2.0,
+        metadata={"verified": False},
+    )
+
+    updated = service.mark_benchmark_verified(
+        alias_id="demo/alias",
+        backend=Backend.CPU,
+        placement=PlacementKind.CPU_ONLY,
+        collected_at=record.collected_at.isoformat(),
+        verified=True,
+        note="validated by operator",
+    )
+
+    assert updated.metadata["verified"] is True
+    assert updated.metadata["verification_note"] == "validated by operator"

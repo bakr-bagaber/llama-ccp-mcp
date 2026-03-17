@@ -50,6 +50,51 @@ class BenchmarkService:
         self.state.add_benchmark(record)
         return record
 
+    def mark_benchmark_verified(
+        self,
+        *,
+        alias_id: str,
+        backend: Backend,
+        placement: PlacementKind,
+        collected_at: str,
+        verified: bool,
+        note: str | None = None,
+    ) -> BenchmarkRecord:
+        for record in self.state.list_benchmarks(alias_id):
+            if (
+                record.backend == backend
+                and record.placement == placement
+                and record.collected_at.isoformat() == collected_at
+            ):
+                metadata = dict(record.metadata)
+                metadata["verified"] = verified
+                if note:
+                    metadata["verification_note"] = note
+                self.state.replace_benchmark_metadata(
+                    alias_id=alias_id,
+                    backend=backend.value,
+                    placement=placement.value,
+                    collected_at=collected_at,
+                    metadata=metadata,
+                )
+                return record.model_copy(update={"metadata": metadata})
+        raise RuntimeError("Benchmark record was not found.")
+
+    def delete_benchmark(
+        self,
+        *,
+        alias_id: str,
+        backend: Backend,
+        placement: PlacementKind,
+        collected_at: str,
+    ) -> None:
+        self.state.delete_benchmark(
+            alias_id=alias_id,
+            backend=backend.value,
+            placement=placement.value,
+            collected_at=collected_at,
+        )
+
     def run_llama_bench(
         self,
         *,

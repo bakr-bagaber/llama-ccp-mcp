@@ -204,3 +204,40 @@ def test_router_penalizes_unverified_mixed_gpu_candidate() -> None:
 
     assert "unverified" in mixed.reason.lower()
     assert mixed.score < igpu_only.score
+
+
+def test_router_uses_verified_mixed_gpu_benchmark() -> None:
+    settings = AppSettings.load()
+    settings.policy.allow_experimental_igpu = True
+    settings.policy.allow_experimental_mixed_gpu = True
+    router = Router(settings)
+    alias = make_alias()
+    profile = make_profile()
+    inventory = make_inventory(include_dgpu=True, include_igpu=True)
+
+    decision = router.choose_placement(
+        alias=alias,
+        profile=profile,
+        model_ram_bytes=2 * 1024**3,
+        model_vram_bytes=1 * 1024**3,
+        context=RouteContext(
+            inventory=inventory,
+            warm_runtimes=[],
+            benchmarks=[
+                BenchmarkRecord(
+                    alias_id="alias",
+                    backend=Backend.VULKAN,
+                    placement=PlacementKind.DGPU_IGPU_MIXED,
+                    prompt_tps=999.0,
+                    generation_tps=999.0,
+                    metadata={"verified": True},
+                )
+            ],
+            requested_backend_preference=BackendPreference.FORCE_IGPU,
+        ),
+    )
+
+    mixed = next(candidate for candidate in decision.candidates if candidate.placement == PlacementKind.DGPU_IGPU_MIXED)
+
+    assert "unverified" not in mixed.reason.lower()
+    assert mixed.score > 1000

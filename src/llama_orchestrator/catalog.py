@@ -103,6 +103,14 @@ class CatalogStore:
         self.document.presets = [item for item in self.document.presets if item.id != preset_id]
         self.save()
 
+    def delete_model(self, model_id: str) -> None:
+        dependent_aliases = [alias.id for alias in self.document.aliases if alias.base_model_id == model_id]
+        if dependent_aliases:
+            joined = ", ".join(sorted(dependent_aliases))
+            raise CatalogError(f"Model '{model_id}' is still used by aliases: {joined}")
+        self.document.models = [item for item in self.document.models if item.id != model_id]
+        self.save()
+
     @staticmethod
     def _upsert_item(items: list, new_item: object) -> None:
         for index, item in enumerate(items):

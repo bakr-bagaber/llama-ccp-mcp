@@ -57,6 +57,12 @@ def create_mcp_server(
         catalog.upsert_model(model)
         return {"ok": True, "model": model.model_dump(mode="json")}
 
+    @mcp.tool(name="llama_delete_model", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def delete_model(params: dict[str, Any]) -> dict[str, Any]:
+        model_id = str(params["model_id"])
+        catalog.delete_model(model_id)
+        return {"ok": True, "model_id": model_id}
+
     @mcp.tool(name="llama_download_model", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
     async def download_remote_model(params: dict[str, Any]) -> dict[str, Any]:
         model = BaseModelDefinition.model_validate(params["model"])
@@ -142,6 +148,28 @@ def create_mcp_server(
         records = state.list_benchmarks(alias_id)
         return {"benchmarks": [record.model_dump(mode="json") for record in records]}
 
+    @mcp.tool(name="llama_verify_benchmark", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def verify_benchmark(params: dict[str, Any]) -> dict[str, Any]:
+        record = benchmark_service.mark_benchmark_verified(
+            alias_id=str(params["alias_id"]),
+            backend=params["backend"],
+            placement=params["placement"],
+            collected_at=str(params["collected_at"]),
+            verified=bool(params.get("verified", True)),
+            note=str(params["note"]) if params.get("note") is not None else None,
+        )
+        return {"ok": True, "benchmark": record.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_delete_benchmark", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def delete_benchmark(params: dict[str, Any]) -> dict[str, Any]:
+        benchmark_service.delete_benchmark(
+            alias_id=str(params["alias_id"]),
+            backend=params["backend"],
+            placement=params["placement"],
+            collected_at=str(params["collected_at"]),
+        )
+        return {"ok": True}
+
     @mcp.tool(name="llama_record_benchmark", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
     async def record_benchmark(params: dict[str, Any]) -> dict[str, Any]:
         record = benchmark_service.record_manual_benchmark(
@@ -183,19 +211,37 @@ def create_mcp_server(
     async def route_explain(params: dict[str, Any]) -> dict[str, Any]:
         alias_id = str(params["alias_id"])
         alias, model, profile, _ = catalog.resolve_alias(alias_id)
+        inventory = hardware_probe.collect()
         decision = runtime_manager.router.choose_placement(
             alias=alias,
             profile=profile,
             model_ram_bytes=model.estimated_ram_bytes or model.size_bytes or 4 * 1024**3,
             model_vram_bytes=model.estimated_vram_bytes or 2 * 1024**3,
             context=RouteContext(
-                inventory=hardware_probe.collect(),
+                inventory=inventory,
                 warm_runtimes=runtime_manager.list_runtimes(),
                 benchmarks=state.list_benchmarks(alias_id),
                 requested_backend_preference=alias.backend_preference or profile.backend_preference,
             ),
         )
-        return decision.model_dump(mode="json")
+        selected = decision.selected
+        summary = {
+            "alias_id": alias_id,
+            "selected_backend": selected.backend.value if selected else None,
+            "selected_placement": selected.placement.value if selected else None,
+            "selected_devices": selected.devices if selected else [],
+            "reason_summary": decision.reason_summary,
+            "warm_runtime_reused": bool(decision.reused_runtime_key),
+            "inventory_backends": [backend.value for backend in inventory.backends_available],
+        }
+        return {"summary": summary, "decision": decision.model_dump(mode="json")}
+
+    @mcp.tool(name="llama_list_route_events", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def list_route_events(params: dict[str, Any] | None = None) -> dict[str, Any]:
+        alias_id = str(params["alias_id"]) if params and "alias_id" in params else None
+        limit = int(params["limit"]) if params and "limit" in params else 20
+        events = state.list_route_events(alias_id=alias_id, limit=limit)
+        return {"route_events": events}
 
     @mcp.tool(name="llama_route_simulate", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def route_simulate(params: dict[str, Any]) -> dict[str, Any]:

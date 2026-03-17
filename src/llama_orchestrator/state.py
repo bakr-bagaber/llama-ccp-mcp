@@ -73,6 +73,44 @@ class StateStore:
             )
             conn.commit()
 
+    def replace_benchmark_metadata(
+        self,
+        *,
+        alias_id: str,
+        backend: str,
+        placement: str,
+        collected_at: str,
+        metadata: dict,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE benchmarks
+                SET metadata_json = ?
+                WHERE alias_id = ? AND backend = ? AND placement = ? AND collected_at = ?
+                """,
+                (json.dumps(metadata), alias_id, backend, placement, collected_at),
+            )
+            conn.commit()
+
+    def delete_benchmark(
+        self,
+        *,
+        alias_id: str,
+        backend: str,
+        placement: str,
+        collected_at: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                DELETE FROM benchmarks
+                WHERE alias_id = ? AND backend = ? AND placement = ? AND collected_at = ?
+                """,
+                (alias_id, backend, placement, collected_at),
+            )
+            conn.commit()
+
     def list_benchmarks(self, alias_id: str | None = None) -> list[BenchmarkRecord]:
         query = "SELECT alias_id, backend, placement, prompt_tps, generation_tps, load_seconds, peak_ram_bytes, peak_vram_bytes, collected_at, metadata_json FROM benchmarks"
         params: tuple[str, ...] = ()
@@ -107,3 +145,22 @@ class StateStore:
                 (alias_id, decision_json),
             )
             conn.commit()
+
+    def list_route_events(self, alias_id: str | None = None, limit: int = 20) -> list[dict]:
+        query = "SELECT alias_id, decision_json, created_at FROM route_events"
+        params: tuple = ()
+        if alias_id:
+            query += " WHERE alias_id = ?"
+            params = (alias_id,)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params = (*params, limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "alias_id": row[0],
+                "decision": json.loads(row[1]),
+                "created_at": row[2],
+            }
+            for row in rows
+        ]
