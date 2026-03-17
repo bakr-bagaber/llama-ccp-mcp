@@ -37,6 +37,18 @@ def create_mcp_server(
     async def list_models() -> dict[str, Any]:
         return {"models": [model.model_dump(mode="json") for model in catalog.list_models()]}
 
+    @mcp.tool(name="llama_list_profiles", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def list_profiles() -> dict[str, Any]:
+        return {"profiles": [profile.model_dump(mode="json") for profile in catalog.list_profiles()]}
+
+    @mcp.tool(name="llama_list_presets", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def list_presets() -> dict[str, Any]:
+        return {"presets": [preset.model_dump(mode="json") for preset in catalog.list_presets()]}
+
+    @mcp.tool(name="llama_list_aliases", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def list_aliases() -> dict[str, Any]:
+        return {"aliases": [alias.model_dump(mode="json") for alias in catalog.list_aliases()]}
+
     @mcp.tool(name="llama_import_model", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
     async def import_model(params: dict[str, Any]) -> dict[str, Any]:
         model = BaseModelDefinition.model_validate(params)
@@ -115,6 +127,16 @@ def create_mcp_server(
         alias_id = str(params["alias_id"]) if params and "alias_id" in params else None
         records = state.list_benchmarks(alias_id)
         return {"benchmarks": [record.model_dump(mode="json") for record in records]}
+
+    @mcp.tool(name="llama_get_memory_policy", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+    async def get_memory_policy() -> dict[str, Any]:
+        return settings.policy.model_dump(mode="json")
+
+    @mcp.tool(name="llama_set_memory_policy", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+    async def set_memory_policy(params: dict[str, Any]) -> dict[str, Any]:
+        updated = settings.policy.model_copy(update=params)
+        settings.policy = updated
+        return {"ok": True, "policy": updated.model_dump(mode="json")}
 
     @mcp.tool(name="llama_route_explain", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
     async def route_explain(params: dict[str, Any]) -> dict[str, Any]:

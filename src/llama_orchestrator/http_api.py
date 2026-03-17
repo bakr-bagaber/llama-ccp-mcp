@@ -30,7 +30,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        await runtime_manager.start_idle_janitor()
         yield
+        await runtime_manager.stop_idle_janitor()
         for runtime in list(runtime_manager.list_runtimes()):
             await runtime_manager.unload_runtime(runtime.runtime_key)
 
@@ -205,10 +207,8 @@ def create_app(
     async def _proxy_openai(runtime: RuntimeRecord, path: str, payload: dict[str, Any], stream: bool) -> Any:
         try:
             if stream:
-                stream_context = await runtime_manager.proxy_json(runtime, path, payload, stream=True)
-
                 async def iterator():
-                    async with stream_context as response:
+                    async with runtime_manager.stream_json(runtime, path, payload) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
                             if line:
@@ -216,7 +216,7 @@ def create_app(
 
                 return StreamingResponse(iterator(), media_type="text/event-stream")
 
-            response = await runtime_manager.proxy_json(runtime, path, payload, stream=False)
+            response = await runtime_manager.post_json(runtime, path, payload)
             if response.status_code >= 400:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
             return JSONResponse(response.json())

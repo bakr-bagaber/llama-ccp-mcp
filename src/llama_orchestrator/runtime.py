@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ class RuntimeManager:
         self._runtimes: dict[str, RuntimeRecord] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._lock = asyncio.Lock()
+        self._idle_task: asyncio.Task[None] | None = None
 
     def list_runtimes(self) -> list[RuntimeRecord]:
         return sorted(self._runtimes.values(), key=lambda item: item.alias_id)
@@ -102,15 +104,37 @@ class RuntimeManager:
             if runtime.alias_id == alias_id:
                 runtime.pinned = pinned
 
-    async def proxy_json(self, runtime: RuntimeRecord, path: str, payload: dict[str, Any], stream: bool = False):
+    async def post_json(self, runtime: RuntimeRecord, path: str, payload: dict[str, Any]) -> httpx.Response:
         timeout = httpx.Timeout(self.settings.http_timeout_seconds)
         url = runtime.endpoint_url.rstrip("/") + path
-        client = httpx.AsyncClient(timeout=timeout)
-        if stream:
-            return client.stream("POST", url, json=payload)
-        response = await client.post(url, json=payload)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, json=payload)
         runtime.last_used_at = self._now()
         return response
+
+    @asynccontextmanager
+    async def stream_json(self, runtime: RuntimeRecord, path: str, payload: dict[str, Any]):
+        timeout = httpx.Timeout(self.settings.http_timeout_seconds)
+        url = runtime.endpoint_url.rstrip("/") + path
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", url, json=payload) as response:
+                runtime.last_used_at = self._now()
+                yield response
+
+    async def start_idle_janitor(self) -> None:
+        if self._idle_task and not self._idle_task.done():
+            return
+        self._idle_task = asyncio.create_task(self._idle_loop(), name="llama-orchestrator-idle-janitor")
+
+    async def stop_idle_janitor(self) -> None:
+        if not self._idle_task:
+            return
+        self._idle_task.cancel()
+        try:
+            await self._idle_task
+        except asyncio.CancelledError:
+            pass
+        self._idle_task = None
 
     async def _evict_if_needed(self, alias: AliasDefinition, selected) -> None:
         if len(self._runtimes) < self.settings.policy.max_loaded_instances:
@@ -212,6 +236,11 @@ class RuntimeManager:
         if preferred:
             return preferred
         return "llama-server"
+
+    async def _idle_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.settings.idle_scan_interval_seconds)
+            await self.unload_idle()
 
     @staticmethod
     def _choose_port() -> int:
