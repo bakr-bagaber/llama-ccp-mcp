@@ -54,7 +54,7 @@ async def test_runtime_manager_reuses_warm_runtime(sandbox_path: Path, monkeypat
     manager, _catalog = _build_manager(sandbox_path)
     inventory = HardwareInventory(system_ram_total_bytes=32 * 1024**3, system_ram_free_bytes=24 * 1024**3, backends_available=[Backend.CPU])
 
-    async def fake_launch(alias, model_path, profile, selected):
+    async def fake_launch(alias, model, profile, preset, selected):
         return RuntimeRecord(
             runtime_key="demo/alias:cpu:cpu_only",
             alias_id=alias.id,

@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from .catalog import CatalogStore
-from .models import AliasDefinition, Backend, RuntimeRecord, RuntimeStatus, SupportLevel
+from .models import AliasDefinition, Backend, ReasoningMode, RuntimeRecord, RuntimeStatus, SupportLevel
 from .router import RouteContext, Router
 from .settings import AppSettings
 from .state import StateStore
@@ -44,7 +44,7 @@ class RuntimeManager:
 
     async def ensure_runtime(self, alias_id: str, inventory, backend_preference=None) -> RuntimeRecord:
         async with self._lock:
-            alias, model, profile, _preset = self.catalog.resolve_alias(alias_id)
+            alias, model, profile, preset = self.catalog.resolve_alias(alias_id)
             benchmarks = self.state.list_benchmarks(alias_id)
             model_ram = model.estimated_ram_bytes or model.size_bytes or 4 * 1024**3
             model_vram = model.estimated_vram_bytes or max(model_ram // 2, 0)
@@ -68,7 +68,7 @@ class RuntimeManager:
             if not decision.selected:
                 raise RuntimeLaunchError(decision.reason_summary)
             await self._evict_if_needed(alias, decision.selected)
-            runtime = await self._launch_runtime(alias, model, profile, decision.selected)
+            runtime = await self._launch_runtime(alias, model, profile, preset, decision.selected)
             runtime.last_used_at = self._now()
             self._runtimes[runtime.runtime_key] = runtime
             return runtime
@@ -151,6 +151,7 @@ class RuntimeManager:
         alias: AliasDefinition,
         model,
         profile,
+        preset,
         selected,
     ) -> RuntimeRecord:
         model_path: Path | None = model.local_path
@@ -174,11 +175,17 @@ class RuntimeManager:
             "--ctx-size",
             str(profile.context_size),
         ]
-        # Qwen chat templates work best through llama.cpp's Jinja support,
-        # and reasoning-format deepseek maps the separate reasoning field
-        # that many OpenAI-compatible clients now expect.
+        # Qwen chat templates work best through llama.cpp's Jinja support.
         if (model.family or "").lower().startswith("qwen"):
-            command.extend(["--jinja", "--reasoning-format", "deepseek"])
+            command.append("--jinja")
+        if preset.reasoning_mode is ReasoningMode.OFF:
+            command.extend(["--reasoning", "off"])
+            if (model.family or "").lower().startswith("qwen3.5"):
+                command.extend(["--chat-template-kwargs", '{"enable_thinking":false}'])
+        elif preset.reasoning_mode in {ReasoningMode.LIGHT, ReasoningMode.DEEP}:
+            command.extend(["--reasoning", "on", "--reasoning-format", "deepseek"])
+        else:
+            command.extend(["--reasoning", "auto", "--reasoning-format", "deepseek"])
         if profile.threads:
             command.extend(["--threads", str(profile.threads)])
         if profile.batch_size:
