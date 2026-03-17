@@ -68,7 +68,7 @@ class RuntimeManager:
             if not decision.selected:
                 raise RuntimeLaunchError(decision.reason_summary)
             await self._evict_if_needed(alias, decision.selected)
-            runtime = await self._launch_runtime(alias, model, profile, preset, decision.selected)
+            runtime = await self._launch_runtime(alias, model, profile, preset, decision.selected, inventory)
             runtime.last_used_at = self._now()
             self._runtimes[runtime.runtime_key] = runtime
             return runtime
@@ -153,6 +153,7 @@ class RuntimeManager:
         profile,
         preset,
         selected,
+        inventory,
     ) -> RuntimeRecord:
         model_path: Path | None = model.local_path
         executable = self._resolve_executable(selected.backend)
@@ -194,6 +195,7 @@ class RuntimeManager:
             command.extend(["--ubatch-size", str(profile.ubatch_size)])
         if profile.gpu_layers is not None and selected.backend is not Backend.CPU:
             command.extend(["--n-gpu-layers", str(profile.gpu_layers)])
+        command.extend(self._device_args_for_selection(selected.backend, selected.devices, inventory))
         if profile.embedding_mode:
             command.append("--embeddings")
         if profile.flash_attention:
@@ -230,6 +232,39 @@ class RuntimeManager:
             raise RuntimeLaunchError(str(exc)) from exc
         runtime.status = RuntimeStatus.READY
         return runtime
+
+    @staticmethod
+    def _device_args_for_selection(backend: Backend, device_ids: list[str], inventory) -> list[str]:
+        """Translate routed device ids into llama.cpp launch arguments.
+
+        We currently apply targeted device selection only for Vulkan because
+        that is the experimental path we have verified locally with explicit
+        selectors like `Vulkan0`.
+        """
+        if backend is not Backend.VULKAN or not device_ids:
+            return []
+
+        selectors: list[str] = []
+        main_gpu_index: int | None = None
+        for device_id in device_ids:
+            device = inventory.device_by_id(device_id) if hasattr(inventory, "device_by_id") else None
+            if not device:
+                continue
+            selector = str(device.metadata.get("vulkan_selector", "")).strip()
+            if not selector:
+                continue
+            selectors.append(selector)
+            if main_gpu_index is None:
+                raw_index = device.metadata.get("vulkan_main_gpu_index")
+                if isinstance(raw_index, int):
+                    main_gpu_index = raw_index
+        if not selectors:
+            return []
+
+        args = ["--device", ",".join(selectors)]
+        if main_gpu_index is not None:
+            args.extend(["--main-gpu", str(main_gpu_index)])
+        return args
 
     async def _wait_until_ready(self, endpoint_url: str) -> None:
         timeout = self.settings.runtime_start_timeout_seconds

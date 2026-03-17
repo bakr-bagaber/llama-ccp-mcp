@@ -177,6 +177,12 @@ class HardwareInventory(StrictModel):
     def devices_by_kind(self, kind: str) -> list[HardwareDevice]:
         return [device for device in self.devices if device.kind == kind]
 
+    def device_by_id(self, device_id: str) -> HardwareDevice | None:
+        for device in self.devices:
+            if device.id == device_id:
+                return device
+        return None
+
 
 class BenchmarkRecord(StrictModel):
     alias_id: str

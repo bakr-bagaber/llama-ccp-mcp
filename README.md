@@ -15,9 +15,9 @@ The project currently includes:
 - typed catalog, profile, preset, and alias models
 - YAML-backed catalog storage
 - SQLite-backed benchmark and route-event state
-- hardware probing for CPU, NVIDIA dGPU, and Windows video controllers
+- hardware probing for CPU, NVIDIA dGPU, Windows video controllers, and Vulkan device selectors
 - placement routing with reserve buffers and experimental iGPU gating
-- lazy runtime launch and idle-unload support
+- lazy runtime launch, device-targeted Vulkan selection, and idle-unload support
 - OpenAI and Anthropic request translation helpers
 - FastMCP control-plane scaffolding
 - pytest coverage for catalog, routing, and protocol translation paths
@@ -83,3 +83,4 @@ uv run pytest -q
 - `POST /v1/chat/completions`, `POST /v1/responses`, and `POST /v1/messages` are the tool-capable generation endpoints.
 - `POST /v1/completions` stays text-only by design.
 - iGPU and mixed dGPU+iGPU routing are intentionally marked experimental for now.
+- On this machine, experimental `Vulkan0` iGPU routing has been live-validated with the local `Qwen3.5-0.8B-UD-Q8_K_XL.gguf` model.

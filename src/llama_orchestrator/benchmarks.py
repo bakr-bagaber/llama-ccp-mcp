@@ -6,7 +6,7 @@ import json
 import subprocess
 
 from .catalog import CatalogStore
-from .models import Backend, BenchmarkRecord, PlacementKind
+from .models import Backend, BenchmarkRecord, HardwareInventory, PlacementKind
 from .settings import AppSettings
 from .state import StateStore
 
@@ -56,6 +56,9 @@ class BenchmarkService:
         alias_id: str,
         backend: Backend,
         n_gpu_layers: int | None = None,
+        placement: PlacementKind | None = None,
+        inventory: HardwareInventory | None = None,
+        device_ids: list[str] | None = None,
     ) -> BenchmarkRecord:
         """Run a real llama-bench process and store the parsed result."""
         executable = self.settings.bench_executable_for_backend(backend)
@@ -78,17 +81,24 @@ class BenchmarkService:
         elif backend is not Backend.CPU and profile.gpu_layers is not None:
             command.extend(["--n-gpu-layers", str(profile.gpu_layers)])
 
+        selectors, main_gpu_index = self._resolve_vulkan_selectors(backend, inventory, device_ids or [])
+        if selectors:
+            command.extend(["--device", ",".join(selectors)])
+            if main_gpu_index is not None:
+                command.extend(["--main-gpu", str(main_gpu_index)])
+
         result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=180)
         payload = json.loads(result.stdout)
         entries = payload if isinstance(payload, list) else [payload]
         prompt_entry = next((item for item in entries if int(item.get("n_prompt", 0)) > 0), {})
         generation_entry = next((item for item in entries if int(item.get("n_gen", 0)) > 0), {})
 
-        placement = PlacementKind.CPU_ONLY
-        if backend is Backend.CUDA:
-            placement = PlacementKind.CPU_DGPU_HYBRID if (n_gpu_layers or profile.gpu_layers or 0) > 0 else PlacementKind.DGPU_ONLY
-        elif backend is Backend.VULKAN:
-            placement = PlacementKind.IGPU_ONLY if "intel" in (model.family or "").lower() else PlacementKind.DGPU_ONLY
+        resolved_placement = placement or self._infer_placement(
+            backend=backend,
+            profile_gpu_layers=n_gpu_layers if n_gpu_layers is not None else profile.gpu_layers,
+            inventory=inventory,
+            device_ids=device_ids or [],
+        )
 
         prompt_tps = float(prompt_entry.get("avg_ts") or 0.0)
         generation_tps = float(generation_entry.get("avg_ts") or 0.0)
@@ -97,11 +107,66 @@ class BenchmarkService:
         record = BenchmarkRecord(
             alias_id=alias_id,
             backend=backend,
-            placement=placement,
+            placement=resolved_placement,
             prompt_tps=prompt_tps,
             generation_tps=generation_tps,
             load_seconds=load_seconds,
-            metadata={"source": "llama-bench", "raw": entries},
+            metadata={
+                "source": "llama-bench",
+                "raw": entries,
+                "device_ids": device_ids or [],
+                "selectors": selectors,
+            },
         )
         self.state.add_benchmark(record)
         return record
+
+    @staticmethod
+    def _resolve_vulkan_selectors(
+        backend: Backend,
+        inventory: HardwareInventory | None,
+        device_ids: list[str],
+    ) -> tuple[list[str], int | None]:
+        if backend is not Backend.VULKAN or inventory is None or not device_ids:
+            return [], None
+        selectors: list[str] = []
+        main_gpu_index: int | None = None
+        for device_id in device_ids:
+            device = inventory.device_by_id(device_id)
+            if not device:
+                continue
+            selector = str(device.metadata.get("vulkan_selector", "")).strip()
+            if not selector:
+                continue
+            selectors.append(selector)
+            if main_gpu_index is None:
+                raw_index = device.metadata.get("vulkan_main_gpu_index")
+                if isinstance(raw_index, int):
+                    main_gpu_index = raw_index
+        return selectors, main_gpu_index
+
+    @staticmethod
+    def _infer_placement(
+        *,
+        backend: Backend,
+        profile_gpu_layers: int | None,
+        inventory: HardwareInventory | None,
+        device_ids: list[str],
+    ) -> PlacementKind:
+        if backend is Backend.CPU:
+            return PlacementKind.CPU_ONLY
+        if backend is Backend.CUDA:
+            return PlacementKind.CPU_DGPU_HYBRID if (profile_gpu_layers or 0) > 0 else PlacementKind.DGPU_ONLY
+        if backend is not Backend.VULKAN or inventory is None or not device_ids:
+            return PlacementKind.DGPU_ONLY
+
+        selected_devices = [inventory.device_by_id(device_id) for device_id in device_ids]
+        selected_devices = [device for device in selected_devices if device is not None]
+        kinds = {device.kind for device in selected_devices}
+        if kinds == {"igpu"}:
+            return PlacementKind.IGPU_ONLY
+        if kinds == {"dgpu"}:
+            return PlacementKind.DGPU_ONLY
+        if "igpu" in kinds and "dgpu" in kinds:
+            return PlacementKind.DGPU_IGPU_MIXED
+        return PlacementKind.DGPU_ONLY

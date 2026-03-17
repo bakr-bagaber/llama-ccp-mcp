@@ -163,6 +163,9 @@ def create_mcp_server(
             alias_id=str(params["alias_id"]),
             backend=params["backend"],
             n_gpu_layers=int(params["n_gpu_layers"]) if params.get("n_gpu_layers") is not None else None,
+            placement=params.get("placement"),
+            inventory=hardware_probe.collect(),
+            device_ids=[str(item) for item in params.get("device_ids", [])],
         )
         return {"ok": True, "benchmark": record.model_dump(mode="json")}
 

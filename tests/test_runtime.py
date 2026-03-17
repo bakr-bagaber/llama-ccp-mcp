@@ -54,7 +54,7 @@ async def test_runtime_manager_reuses_warm_runtime(sandbox_path: Path, monkeypat
     manager, _catalog = _build_manager(sandbox_path)
     inventory = HardwareInventory(system_ram_total_bytes=32 * 1024**3, system_ram_free_bytes=24 * 1024**3, backends_available=[Backend.CPU])
 
-    async def fake_launch(alias, model, profile, preset, selected):
+    async def fake_launch(alias, model, profile, preset, selected, inventory):
         return RuntimeRecord(
             runtime_key="demo/alias:cpu:cpu_only",
             alias_id=alias.id,
@@ -97,3 +97,24 @@ async def test_runtime_manager_unloads_idle_runtime(sandbox_path: Path) -> None:
 
     assert runtime.runtime_key in unloaded
     assert manager.list_runtimes() == []
+
+
+def test_runtime_manager_builds_vulkan_device_args() -> None:
+    inventory = HardwareInventory(
+        devices=[
+            # The experimental iGPU path uses Vulkan selectors discovered
+            # from llama-bench's device list output.
+            # We keep the test tiny so the launch rule stays easy to follow.
+            {
+                "id": "igpu-0",
+                "name": "Intel Arc",
+                "kind": "igpu",
+                "backend_candidates": [Backend.VULKAN],
+                "metadata": {"vulkan_selector": "Vulkan0", "vulkan_main_gpu_index": 0},
+            }
+        ]
+    )
+
+    args = RuntimeManager._device_args_for_selection(Backend.VULKAN, ["igpu-0"], inventory)
+
+    assert args == ["--device", "Vulkan0", "--main-gpu", "0"]

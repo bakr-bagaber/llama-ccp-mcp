@@ -40,6 +40,7 @@ def make_inventory(include_dgpu: bool = False, include_igpu: bool = False) -> Ha
                 backend_candidates=[Backend.CUDA],
                 total_memory_bytes=8 * 1024**3,
                 free_memory_bytes=8 * 1024**3,
+                metadata={"vulkan_selector": "Vulkan1", "vulkan_main_gpu_index": 1},
             )
         )
         backends.append(Backend.CUDA)
@@ -53,6 +54,7 @@ def make_inventory(include_dgpu: bool = False, include_igpu: bool = False) -> Ha
                 total_memory_bytes=4 * 1024**3,
                 free_memory_bytes=4 * 1024**3,
                 experimental=True,
+                metadata={"vulkan_selector": "Vulkan0", "vulkan_main_gpu_index": 0},
             )
         )
         backends.append(Backend.VULKAN)

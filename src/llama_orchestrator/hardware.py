@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -33,6 +34,7 @@ class HardwareProbe:
         )
         inventory.devices.extend(self._probe_nvidia())
         inventory.devices.extend(self._probe_windows_video_controllers(existing_names={device.name for device in inventory.devices}))
+        self._attach_vulkan_metadata(inventory)
         inventory.backends_available = self._detect_backends(inventory)
         if not inventory.devices:
             inventory.warnings.append("No GPU devices were detected. CPU-only routing remains available.")
@@ -144,3 +146,77 @@ class HardwareProbe:
                 )
             )
         return devices
+
+    def _attach_vulkan_metadata(self, inventory: HardwareInventory) -> None:
+        """Annotate inventory devices with Vulkan selectors when available.
+
+        llama.cpp's Vulkan binaries expose selectors like `Vulkan0` that we
+        need later for targeted iGPU launches. We store those selectors in
+        metadata so the router and runtime manager can stay backend-agnostic.
+        """
+        for selector, name in self._probe_vulkan_devices():
+            matched = self._match_device_by_name(inventory, name)
+            if matched is not None:
+                if Backend.VULKAN not in matched.backend_candidates:
+                    matched.backend_candidates.append(Backend.VULKAN)
+                matched.metadata["vulkan_selector"] = selector
+                matched.metadata["vulkan_main_gpu_index"] = self._selector_index(selector)
+                continue
+
+            inferred_kind = self._infer_device_kind(name)
+            inventory.devices.append(
+                HardwareDevice(
+                    id=f"vulkan-{selector.lower()}",
+                    name=name,
+                    kind=inferred_kind,
+                    backend_candidates=[Backend.VULKAN],
+                    experimental=inferred_kind == "igpu",
+                    metadata={
+                        "vulkan_selector": selector,
+                        "vulkan_main_gpu_index": self._selector_index(selector),
+                    },
+                )
+            )
+
+    def _probe_vulkan_devices(self) -> list[tuple[str, str]]:
+        executable = self.settings.bench_executable_for_backend(Backend.VULKAN)
+        if not executable or not self._which(executable):
+            return []
+        try:
+            result = subprocess.run([executable, "--list-devices"], capture_output=True, text=True, check=True, timeout=10)
+        except Exception:
+            return []
+        devices: list[tuple[str, str]] = []
+        for line in result.stdout.splitlines():
+            match = re.match(r"^(Vulkan\d+):\s+(.+)$", line.strip())
+            if match:
+                devices.append((match.group(1), self._normalize_vulkan_name(match.group(2))))
+        return devices
+
+    @staticmethod
+    def _match_device_by_name(inventory: HardwareInventory, name: str) -> HardwareDevice | None:
+        lower_name = name.lower()
+        for device in inventory.devices:
+            if device.name.lower() == lower_name:
+                return device
+        for device in inventory.devices:
+            candidate = device.name.lower()
+            if candidate in lower_name or lower_name in candidate:
+                return device
+        return None
+
+    @staticmethod
+    def _infer_device_kind(name: str) -> str:
+        lower_name = name.lower()
+        if "intel" in lower_name or "iris" in lower_name or "uhd" in lower_name or "arc" in lower_name:
+            return "igpu"
+        return "dgpu"
+
+    @staticmethod
+    def _selector_index(selector: str) -> int | None:
+        suffix = selector.removeprefix("Vulkan")
+        return int(suffix) if suffix.isdigit() else None
+
+    @staticmethod
+    def _normalize_vulkan_name(name: str) -> str:
+        return re.sub(r"\s+\(\d+\s+MiB,\s+\d+\s+MiB free\)$", "", name).strip()
