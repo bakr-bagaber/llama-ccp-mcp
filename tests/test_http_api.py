@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from llama_orchestrator.catalog import CatalogStore
 from llama_orchestrator.hardware import HardwareProbe
-from llama_orchestrator.http_api import _anthropic_messages_to_openai_messages, _apply_preset_defaults, _chat_completion_to_anthropic, create_app
+from llama_orchestrator.http_api import (
+    _anthropic_messages_to_openai_messages,
+    _anthropic_tool_choice_to_openai,
+    _apply_preset_defaults,
+    _chat_completion_to_anthropic,
+    _openai_stream_to_anthropic_events,
+    create_app,
+)
 from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile, ReasoningMode
 from llama_orchestrator.router import Router
 from llama_orchestrator.runtime import RuntimeManager
@@ -117,6 +126,10 @@ def test_chat_completion_to_anthropic_maps_tool_calls() -> None:
     assert response["content"][0]["input"]["q"] == "abc"
 
 
+def test_anthropic_tool_choice_any_maps_to_openai_required() -> None:
+    assert _anthropic_tool_choice_to_openai("any") == "required"
+
+
 def test_preset_defaults_add_qwen_no_think_directive(sandbox_path: Path) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
@@ -191,3 +204,21 @@ def test_preset_defaults_use_enable_thinking_for_qwen35(sandbox_path: Path) -> N
     assert payload["enable_thinking"] is False
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
     assert payload["messages"][0]["role"] == "user"
+
+
+@pytest.mark.anyio
+async def test_openai_stream_is_translated_to_anthropic_events() -> None:
+    async def fake_lines():
+        yield 'data: {"id":"chatcmpl_1","choices":[{"delta":{"content":"Hello"}}]}'
+        yield 'data: {"id":"chatcmpl_1","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"lookup","arguments":"{\\"q\\": "}},{"index":0,"function":{"arguments":"\\"abc\\"}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":2}}'
+        yield 'data: {"id":"chatcmpl_1","choices":[{"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}'
+        yield "data: [DONE]"
+
+    events = [event async for event in _openai_stream_to_anthropic_events(fake_lines(), {"model": "demo/alias"})]
+
+    assert events[0].startswith("event: message_start")
+    assert any("event: content_block_start" in event and '"type": "text"' in event for event in events)
+    assert any("event: content_block_delta" in event and '"text_delta"' in event for event in events)
+    assert any("event: content_block_delta" in event and '"input_json_delta"' in event for event in events)
+    assert any("event: message_delta" in event and '"stop_reason": "tool_use"' in event for event in events)
+    assert events[-1].startswith("event: message_stop")

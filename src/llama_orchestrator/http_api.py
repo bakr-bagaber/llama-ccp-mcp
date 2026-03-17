@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -122,11 +122,11 @@ def create_app(
         if not anthropic_version:
             raise HTTPException(status_code=400, detail="Anthropic requests must include the anthropic-version header.")
         runtime, chat_payload = await _prepare_anthropic_messages(payload, anthropic_beta)
-        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, bool(payload.get("stream")), payload["model"])
-        if isinstance(response, JSONResponse):
-            body = json.loads(response.body)
-            return JSONResponse(_chat_completion_to_anthropic(body, payload))
-        return response
+        if payload.get("stream"):
+            return _proxy_anthropic_stream(runtime, chat_payload, payload)
+        response = await _proxy_openai(runtime, "/v1/chat/completions", chat_payload, False, payload["model"])
+        body = json.loads(response.body) if isinstance(response, JSONResponse) else response
+        return JSONResponse(_chat_completion_to_anthropic(body, payload))
 
     @app.post("/v1/messages/count_tokens", dependencies=[Depends(require_api_key)])
     async def count_tokens(payload: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +229,25 @@ def create_app(
         except httpx.HTTPError as exc:
             detail = str(exc).strip() or exc.__class__.__name__
             raise HTTPException(status_code=502, detail=detail) from exc
+
+    def _proxy_anthropic_stream(runtime: RuntimeRecord, payload: dict[str, Any], request_payload: dict[str, Any]) -> StreamingResponse:
+        async def iterator() -> AsyncIterator[str]:
+            try:
+                async with runtime_manager.stream_json(runtime, "/v1/chat/completions", payload) as response:
+                    response.raise_for_status()
+                    async for event in _openai_stream_to_anthropic_events(response.aiter_lines(), request_payload):
+                        yield event
+            except httpx.HTTPError as exc:
+                error_event = _anthropic_sse_event(
+                    "error",
+                    {
+                        "type": "error",
+                        "error": {"type": "api_error", "message": str(exc).strip() or exc.__class__.__name__},
+                    },
+                )
+                yield error_event
+
+        return StreamingResponse(iterator(), media_type="text/event-stream")
 
     def _chat_completion_to_response(body: dict[str, Any]) -> dict[str, Any]:
         message = ((body.get("choices") or [{}])[0]).get("message", {})
@@ -367,8 +386,10 @@ def _anthropic_tool_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
 
 
 def _anthropic_tool_choice_to_openai(choice: Any) -> Any:
-    if choice in (None, "auto", "any"):
+    if choice in (None, "auto"):
         return choice
+    if choice == "any":
+        return "required"
     if isinstance(choice, dict) and choice.get("type") == "tool":
         return {"type": "function", "function": {"name": choice.get("name")}}
     return choice
@@ -465,3 +486,157 @@ def _chat_completion_to_anthropic(body: dict[str, Any], request_payload: dict[st
             "output_tokens": usage.get("completion_tokens", 0),
         },
     }
+
+
+async def _openai_stream_to_anthropic_events(
+    lines: AsyncIterator[str],
+    request_payload: dict[str, Any],
+) -> AsyncIterator[str]:
+    """Translate OpenAI-style SSE frames into Anthropic SSE events."""
+    message_started = False
+    message_id = "msg_local"
+    stop_reason = "end_turn"
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    text_block_index: int | None = None
+    next_block_index = 0
+    open_block_indices: set[int] = set()
+    tool_block_indices: dict[int, int] = {}
+    tool_state: dict[int, dict[str, Any]] = {}
+
+    async for raw_line in lines:
+        line = raw_line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload = line.removeprefix("data:").strip()
+        if payload == "[DONE]":
+            break
+        chunk = json.loads(payload)
+        if not message_started:
+            message_started = True
+            message_id = chunk.get("id", message_id)
+            initial_usage = chunk.get("usage", {})
+            usage["input_tokens"] = int(initial_usage.get("prompt_tokens", 0) or 0)
+            yield _anthropic_sse_event(
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": message_id,
+                        "type": "message",
+                        "role": "assistant",
+                        "model": request_payload.get("model"),
+                        "content": [],
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "usage": usage.copy(),
+                    },
+                },
+            )
+
+        choice = (chunk.get("choices") or [{}])[0]
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason")
+        chunk_usage = chunk.get("usage", {})
+        if chunk_usage:
+            usage["input_tokens"] = int(chunk_usage.get("prompt_tokens", usage["input_tokens"]) or 0)
+            usage["output_tokens"] = int(chunk_usage.get("completion_tokens", usage["output_tokens"]) or 0)
+
+        content_delta = delta.get("content")
+        if content_delta:
+            if text_block_index is None:
+                text_block_index = next_block_index
+                next_block_index += 1
+                open_block_indices.add(text_block_index)
+                yield _anthropic_sse_event(
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": text_block_index,
+                        "content_block": {"type": "text", "text": ""},
+                    },
+                )
+            yield _anthropic_sse_event(
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": text_block_index,
+                    "delta": {"type": "text_delta", "text": content_delta},
+                },
+            )
+
+        for tool_call in delta.get("tool_calls", []):
+            openai_index = int(tool_call.get("index", len(tool_block_indices)))
+            if openai_index not in tool_block_indices:
+                block_index = next_block_index
+                next_block_index += 1
+                tool_block_indices[openai_index] = block_index
+                open_block_indices.add(block_index)
+                tool_state[openai_index] = {"id": None, "name": "", "arguments": ""}
+                yield _anthropic_sse_event(
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": block_index,
+                        "content_block": {"type": "tool_use", "id": "", "name": "", "input": {}},
+                    },
+                )
+
+            state = tool_state[openai_index]
+            if tool_call.get("id"):
+                state["id"] = tool_call["id"]
+            function = tool_call.get("function", {})
+            if function.get("name"):
+                state["name"] = function["name"]
+            if function.get("arguments"):
+                arguments_fragment = str(function["arguments"])
+                state["arguments"] += arguments_fragment
+                yield _anthropic_sse_event(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": tool_block_indices[openai_index],
+                        "delta": {"type": "input_json_delta", "partial_json": arguments_fragment},
+                    },
+                )
+
+        if finish_reason == "tool_calls":
+            stop_reason = "tool_use"
+        elif finish_reason == "length":
+            stop_reason = "max_tokens"
+        elif finish_reason:
+            stop_reason = "end_turn"
+
+    if not message_started:
+        yield _anthropic_sse_event(
+            "message_start",
+            {
+                "type": "message_start",
+                "message": {
+                    "id": message_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "model": request_payload.get("model"),
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": usage.copy(),
+                },
+            },
+        )
+
+    for block_index in sorted(open_block_indices):
+        yield _anthropic_sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+
+    yield _anthropic_sse_event(
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+            "usage": {"output_tokens": usage["output_tokens"]},
+        },
+    )
+    yield _anthropic_sse_event("message_stop", {"type": "message_stop"})
+
+
+def _anthropic_sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
