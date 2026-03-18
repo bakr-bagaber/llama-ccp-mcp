@@ -63,7 +63,7 @@ def create_app(
                 {
                     "id": alias.id,
                     "object": "model",
-                    "owned_by": "llama-orchestrator",
+                    "owned_by": "llama-mcp",
                     "capabilities": [cap.value for cap in alias.capabilities],
                     "experimental": alias.experimental,
                 }

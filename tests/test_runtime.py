@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from llama_orchestrator.catalog import CatalogStore
-from llama_orchestrator.models import (
+from llama_mcp.catalog import CatalogStore
+from llama_mcp.models import (
     AliasDefinition,
     BaseModelDefinition,
     Backend,
@@ -18,16 +18,16 @@ from llama_orchestrator.models import (
     RuntimeStatus,
     SupportLevel,
 )
-from llama_orchestrator.router import Router
-from llama_orchestrator.runtime import RuntimeManager
-from llama_orchestrator.settings import AppSettings
-from llama_orchestrator.state import StateStore
+from llama_mcp.router import Router
+from llama_mcp.runtime import RuntimeManager
+from llama_mcp.settings import AppSettings
+from llama_mcp.state import StateStore
 
 
 def _build_manager(sandbox_path: Path) -> tuple[RuntimeManager, CatalogStore]:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)

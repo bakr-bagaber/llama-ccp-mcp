@@ -7,9 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
-from llama_orchestrator.catalog import CatalogStore
-from llama_orchestrator.hardware import HardwareProbe
-from llama_orchestrator.http_api import (
+from llama_mcp.catalog import CatalogStore
+from llama_mcp.hardware import HardwareProbe
+from llama_mcp.http_api import (
     _anthropic_messages_to_openai_messages,
     _responses_input_to_messages,
     _anthropic_tool_choice_to_openai,
@@ -19,17 +19,17 @@ from llama_orchestrator.http_api import (
     _openai_stream_to_responses_events,
     create_app,
 )
-from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile, ReasoningMode, RuntimeRecord, RuntimeStatus, SupportLevel, Backend, PlacementKind
-from llama_orchestrator.router import Router
-from llama_orchestrator.runtime import RuntimeManager
-from llama_orchestrator.settings import AppSettings
-from llama_orchestrator.state import StateStore
+from llama_mcp.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile, ReasoningMode, RuntimeRecord, RuntimeStatus, SupportLevel, Backend, PlacementKind
+from llama_mcp.router import Router
+from llama_mcp.runtime import RuntimeManager
+from llama_mcp.settings import AppSettings
+from llama_mcp.state import StateStore
 
 
 def _build_app(sandbox_path: Path) -> TestClient:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)
@@ -140,7 +140,7 @@ def test_anthropic_tool_choice_none_passes_through() -> None:
 def test_preset_defaults_add_qwen_no_think_directive(sandbox_path: Path) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)
@@ -178,7 +178,7 @@ def test_preset_defaults_add_qwen_no_think_directive(sandbox_path: Path) -> None
 def test_preset_defaults_use_enable_thinking_for_qwen35(sandbox_path: Path) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)
@@ -266,8 +266,8 @@ def test_responses_route_accepts_instructions_and_typed_input(sandbox_path: Path
 
         return Response()
 
-    monkeypatch.setattr("llama_orchestrator.http_api.RuntimeManager.ensure_runtime", fake_ensure_runtime)
-    monkeypatch.setattr("llama_orchestrator.http_api.RuntimeManager.post_json", fake_post_json)
+    monkeypatch.setattr("llama_mcp.http_api.RuntimeManager.ensure_runtime", fake_ensure_runtime)
+    monkeypatch.setattr("llama_mcp.http_api.RuntimeManager.post_json", fake_post_json)
 
     response = client.post(
         "/v1/responses",
@@ -305,7 +305,7 @@ async def test_openai_stream_is_translated_to_anthropic_events() -> None:
 
 
 def test_chat_completion_to_response_includes_completed_status() -> None:
-    from llama_orchestrator.http_api import _chat_completion_to_response
+    from llama_mcp.http_api import _chat_completion_to_response
 
     response = _chat_completion_to_response(
         {

@@ -1,4 +1,4 @@
-# Llama.cpp Orchestrator Spec
+﻿# Llama.cpp Orchestrator Spec
 
 Status: Draft v1
 
@@ -46,7 +46,7 @@ Planned tool families:
 
 ### 2. Compatibility Data Plane
 
-The HTTP API is the only inference surface exposed to clients. It should present both OpenAI-compatible and Anthropic-compatible surfaces over the same orchestrator.
+The HTTP API is the only inference surface exposed to clients. It should present both OpenAI-compatible and Anthropic-compatible surfaces over the same MCP server.
 
 Initial OpenAI-compatible endpoints:
 
@@ -59,7 +59,7 @@ Planned compatibility shim:
 
 - `POST /v1/responses`
 
-The `/v1/responses` route should be implemented by the orchestrator itself if specific clients need it. This should not depend on upstream `llama-server` supporting that path.
+The `/v1/responses` route should be implemented by the MCP server itself if specific clients need it. This should not depend on upstream `llama-server` supporting that path.
 
 Initial Anthropic-compatible endpoints:
 
@@ -90,7 +90,7 @@ Non-tool endpoints:
 
 Legacy caveat:
 
-- OpenAI `POST /v1/completions` is a legacy text completion endpoint and does not natively define tool use in the current official API. The orchestrator should keep this endpoint text-only and return a clear compatibility error if tool-related fields are supplied.
+- OpenAI `POST /v1/completions` is a legacy text completion endpoint and does not natively define tool use in the current official API. The MCP server should keep this endpoint text-only and return a clear compatibility error if tool-related fields are supplied.
 
 The server must never silently ignore requested tool use on an endpoint that does not support it.
 
@@ -236,7 +236,7 @@ Machine-managed state should live in a local SQLite database.
 
 Suggested file:
 
-- `state/orchestrator.db`
+- `state/mcp.db`
 
 Database domains:
 
@@ -293,7 +293,7 @@ OpenAI-compatible and Anthropic-compatible clients choose a `model` string. That
 
 ### Request Flow
 
-1. Client sends request to the orchestrator
+1. Client sends request to the MCP server
 2. Orchestrator resolves alias to base model, load profile, and generation preset
 3. Router chooses placement and either reuses or launches a runtime
 4. Orchestrator translates the request into the selected upstream `llama-server` format
@@ -301,7 +301,7 @@ OpenAI-compatible and Anthropic-compatible clients choose a `model` string. That
 
 ### Compatibility Strategy
 
-The orchestrator must normalize differences between client expectations and upstream `llama-server`.
+The MCP server must normalize differences between client expectations and upstream `llama-server`.
 
 This includes:
 
@@ -517,7 +517,7 @@ The system should support both heuristic routing and benchmark-informed routing.
 ### Sources
 
 - `llama-bench` results
-- orchestrator-observed first token latency
+- MCP-observed first token latency
 - tokens per second
 - peak memory during load
 - peak memory during steady-state inference
@@ -578,9 +578,9 @@ Defaults:
 
 ## Assumptions
 
-- The orchestrator is a thin manager around upstream `llama.cpp`
+- The MCP server is a thin manager around upstream `llama.cpp`
 - Upstream `llama-server` is the underlying runtime
-- `/v1/responses` compatibility may need to be implemented in the orchestrator layer
+- `/v1/responses` compatibility may need to be implemented in the MCP layer
 - Mixed dGPU+iGPU execution should be treated as experimental until validated
 
 ## Source Notes
@@ -600,3 +600,4 @@ Relevant sources:
 - https://docs.anthropic.com/en/api/messages
 - https://docs.anthropic.com/en/docs/build-with-claude/token-counting
 - https://docs.anthropic.com/en/api/models-list
+

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from llama_orchestrator.mcp_server import _benchmark_summary_payload, _runtime_diagnostics_payload
-from llama_orchestrator.settings import AppSettings
+from llama_mcp.mcp_server import _benchmark_summary_payload, _runtime_diagnostics_payload
+from llama_mcp.settings import AppSettings
 
 
 def test_runtime_diagnostics_payload_summarizes_runtime_health() -> None:

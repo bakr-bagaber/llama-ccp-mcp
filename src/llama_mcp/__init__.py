@@ -1,4 +1,4 @@
-"""Llama.cpp orchestrator package."""
+"""Llama.cpp MCP package."""
 
 __all__ = ["__version__"]
 

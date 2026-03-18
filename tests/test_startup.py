@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from llama_orchestrator.__main__ import initialize_catalog, validate_startup_config
-from llama_orchestrator.catalog import CatalogStore
-from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
-from llama_orchestrator.settings import AppSettings
+from llama_mcp.__main__ import initialize_catalog, validate_startup_config
+from llama_mcp.catalog import CatalogStore
+from llama_mcp.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
+from llama_mcp.settings import AppSettings
 
 
 def test_validate_startup_config_rejects_missing_local_model_path(sandbox_path: Path) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)

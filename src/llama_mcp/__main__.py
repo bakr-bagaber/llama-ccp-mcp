@@ -31,7 +31,7 @@ def initialize_catalog(catalog_path: Path) -> Path:
     if catalog_path.exists():
         return catalog_path
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
-    template = files("llama_orchestrator").joinpath("templates/default_catalog.yaml").read_text(encoding="utf-8")
+    template = files("llama_mcp").joinpath("templates/default_catalog.yaml").read_text(encoding="utf-8")
     catalog_path.write_text(template, encoding="utf-8")
     return catalog_path
 
@@ -62,7 +62,7 @@ def main_mcp() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the llama.cpp orchestrator")
+    parser = argparse.ArgumentParser(description="Run the llama.cpp MCP server")
     parser.add_argument("mode", choices=["http", "mcp", "init-config", "validate-config"], nargs="?", default="http")
     args = parser.parse_args()
     if args.mode == "init-config":

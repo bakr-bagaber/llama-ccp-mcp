@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from llama_orchestrator.models import (
+from llama_mcp.models import (
     AliasDefinition,
     Backend,
     BackendPreference,
@@ -10,8 +10,8 @@ from llama_orchestrator.models import (
     LoadProfile,
     PlacementKind,
 )
-from llama_orchestrator.router import RouteContext, Router
-from llama_orchestrator.settings import AppSettings
+from llama_mcp.router import RouteContext, Router
+from llama_mcp.settings import AppSettings
 
 
 def make_alias() -> AliasDefinition:

@@ -1,7 +1,7 @@
 [project]
-name = "llama-cpp-orchestrator"
+name = "llama-ccp-mcp"
 version = "0.1.0"
-description = "Local llama.cpp orchestrator with OpenAI, Anthropic, and MCP compatibility layers"
+description = "Local llama.cpp MCP server with OpenAI and Anthropic compatibility layers"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -31,9 +31,9 @@ test = [
 ]
 
 [project.scripts]
-llama-orchestrator = "llama_orchestrator.__main__:main"
-llama-orchestrator-http = "llama_orchestrator.__main__:main_http"
-llama-orchestrator-mcp = "llama_orchestrator.__main__:main_mcp"
+llama-mcp = "llama_mcp.__main__:main"
+llama-mcp-http = "llama_mcp.__main__:main_http"
+llama-mcp-server = "llama_mcp.__main__:main_mcp"
 
 [build-system]
 requires = ["setuptools>=75.0"]
@@ -46,7 +46,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-llama_orchestrator = ["templates/*.yaml"]
+llama_mcp = ["templates/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

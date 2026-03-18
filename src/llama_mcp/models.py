@@ -1,4 +1,4 @@
-"""Core data models for the orchestrator."""
+"""Core data models for the MCP server."""
 
 from __future__ import annotations
 

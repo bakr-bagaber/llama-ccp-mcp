@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from llama_orchestrator.catalog import CatalogError
-from llama_orchestrator.catalog import CatalogStore
-from llama_orchestrator.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
+from llama_mcp.catalog import CatalogError
+from llama_mcp.catalog import CatalogStore
+from llama_mcp.models import AliasDefinition, BaseModelDefinition, GenerationPreset, LoadProfile
 
 
 def test_catalog_upsert_and_resolve_alias(sandbox_path: Path) -> None:

@@ -33,7 +33,7 @@ def create_mcp_server(
     if FastMCP is None:  # pragma: no cover - depends on environment
         raise RuntimeError("The 'mcp' package is not installed. Install dependencies before starting the MCP server.")
 
-    mcp = FastMCP("llama_orchestrator")
+    mcp = FastMCP("llama_mcp")
     benchmark_service = BenchmarkService(settings, catalog, state)
 
     @mcp.tool(name="llama_list_models", annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})

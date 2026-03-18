@@ -1,4 +1,4 @@
-# Implementation Plan
+﻿# Implementation Plan
 
 ## Delivery Approach
 
@@ -186,18 +186,18 @@ Acceptance:
 
 ## Recommended Initial File Layout
 
-- `src/llama_orchestrator/__init__.py`
-- `src/llama_orchestrator/settings.py`
-- `src/llama_orchestrator/catalog.py`
-- `src/llama_orchestrator/models.py`
-- `src/llama_orchestrator/state.py`
-- `src/llama_orchestrator/router.py`
-- `src/llama_orchestrator/policy.py`
-- `src/llama_orchestrator/runtime.py`
-- `src/llama_orchestrator/backends/`
-- `src/llama_orchestrator/http_api.py`
-- `src/llama_orchestrator/mcp_server.py`
-- `src/llama_orchestrator/benchmarks.py`
+- `src/llama_mcp/__init__.py`
+- `src/llama_mcp/settings.py`
+- `src/llama_mcp/catalog.py`
+- `src/llama_mcp/models.py`
+- `src/llama_mcp/state.py`
+- `src/llama_mcp/router.py`
+- `src/llama_mcp/policy.py`
+- `src/llama_mcp/runtime.py`
+- `src/llama_mcp/backends/`
+- `src/llama_mcp/http_api.py`
+- `src/llama_mcp/mcp_server.py`
+- `src/llama_mcp/benchmarks.py`
 - `catalog/catalog.yaml`
 - `tests/`
 
@@ -217,7 +217,7 @@ Test at minimum:
 ## Risks
 
 - upstream `llama-server` endpoint differences may require compatibility translation
-- Anthropic streaming and tool-use semantics may require orchestrator-side translation rather than simple proxying
+- Anthropic streaming and tool-use semantics may require MCP-side translation rather than simple proxying
 - Windows iGPU telemetry may vary by vendor and driver
 - heterogeneous mixed GPU routing may be technically possible but not consistently beneficial
 - model metadata may be incomplete, requiring heuristic estimates before first load
@@ -231,3 +231,4 @@ Test at minimum:
 - idle eviction works
 - routing chooses between CPU and dGPU on a real machine
 - iGPU and mixed placements are visible and explicitly experimental
+

@@ -124,7 +124,7 @@ class RuntimeManager:
     async def start_idle_janitor(self) -> None:
         if self._idle_task and not self._idle_task.done():
             return
-        self._idle_task = asyncio.create_task(self._idle_loop(), name="llama-orchestrator-idle-janitor")
+        self._idle_task = asyncio.create_task(self._idle_loop(), name="llama-mcp-idle-janitor")
 
     async def stop_idle_janitor(self) -> None:
         if not self._idle_task:

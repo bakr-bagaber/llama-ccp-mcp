@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from llama_orchestrator.benchmarks import BenchmarkService
-from llama_orchestrator.catalog import CatalogStore
-from llama_orchestrator.models import (
+from llama_mcp.benchmarks import BenchmarkService
+from llama_mcp.catalog import CatalogStore
+from llama_mcp.models import (
     AliasDefinition,
     BaseModelDefinition,
     Backend,
@@ -15,14 +15,14 @@ from llama_orchestrator.models import (
     LoadProfile,
     PlacementKind,
 )
-from llama_orchestrator.settings import AppSettings
-from llama_orchestrator.state import StateStore
+from llama_mcp.settings import AppSettings
+from llama_mcp.state import StateStore
 
 
 def test_run_llama_bench_parses_prompt_and_generation_rows(sandbox_path: Path, monkeypatch) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
         cpu_bench_executable="fake-bench",
     )
     settings.ensure_directories()
@@ -56,7 +56,7 @@ def test_run_llama_bench_parses_prompt_and_generation_rows(sandbox_path: Path, m
         assert "--output" in command
         return Result()
 
-    monkeypatch.setattr("llama_orchestrator.benchmarks.subprocess.run", fake_run)
+    monkeypatch.setattr("llama_mcp.benchmarks.subprocess.run", fake_run)
 
     record = service.run_llama_bench(alias_id="demo/alias", backend=Backend.CPU)
 
@@ -68,7 +68,7 @@ def test_run_llama_bench_parses_prompt_and_generation_rows(sandbox_path: Path, m
 def test_run_llama_bench_uses_vulkan_device_selectors(sandbox_path: Path, monkeypatch) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
         vulkan_bench_executable="fake-vulkan-bench",
     )
     settings.ensure_directories()
@@ -117,7 +117,7 @@ def test_run_llama_bench_uses_vulkan_device_selectors(sandbox_path: Path, monkey
         captured.extend(command)
         return Result()
 
-    monkeypatch.setattr("llama_orchestrator.benchmarks.subprocess.run", fake_run)
+    monkeypatch.setattr("llama_mcp.benchmarks.subprocess.run", fake_run)
 
     record = service.run_llama_bench(
         alias_id="demo/alias",
@@ -137,7 +137,7 @@ def test_run_llama_bench_uses_vulkan_device_selectors(sandbox_path: Path, monkey
 def test_mixed_vulkan_benchmark_is_marked_unverified_when_rows_are_per_device(sandbox_path: Path, monkeypatch) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
         vulkan_bench_executable="fake-vulkan-bench",
     )
     settings.ensure_directories()
@@ -192,7 +192,7 @@ def test_mixed_vulkan_benchmark_is_marked_unverified_when_rows_are_per_device(sa
     def fake_run(command, capture_output, text, check, timeout):
         return Result()
 
-    monkeypatch.setattr("llama_orchestrator.benchmarks.subprocess.run", fake_run)
+    monkeypatch.setattr("llama_mcp.benchmarks.subprocess.run", fake_run)
 
     record = service.run_llama_bench(
         alias_id="demo/alias",
@@ -209,7 +209,7 @@ def test_mixed_vulkan_benchmark_is_marked_unverified_when_rows_are_per_device(sa
 def test_manual_benchmark_verification_roundtrip(sandbox_path: Path) -> None:
     settings = AppSettings(
         catalog_path=sandbox_path / "catalog.yaml",
-        state_path=sandbox_path / "orchestrator.db",
+        state_path=sandbox_path / "mcp.db",
     )
     settings.ensure_directories()
     catalog = CatalogStore(settings.catalog_path)

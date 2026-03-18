@@ -1,4 +1,4 @@
-# Llama.cpp Orchestrator
+﻿# Llama.cpp Orchestrator
 
 Local orchestration and compatibility layer for `llama.cpp`.
 
@@ -352,10 +352,10 @@ The package is installable as a normal Python project and now includes:
 
 ### CLI Commands
 
-- `llama-orchestrator http`
-- `llama-orchestrator mcp`
-- `llama-orchestrator init-config`
-- `llama-orchestrator validate-config`
+- `llama-mcp http`
+- `llama-mcp mcp`
+- `llama-mcp init-config`
+- `llama-mcp validate-config`
 
 ### Why `init-config` Exists
 
@@ -397,25 +397,25 @@ uv sync
 Bootstrap a starter catalog:
 
 ```powershell
-uv run llama-orchestrator init-config
+uv run llama-mcp init-config
 ```
 
 Validate your configuration:
 
 ```powershell
-uv run llama-orchestrator validate-config
+uv run llama-mcp validate-config
 ```
 
 Start the HTTP server:
 
 ```powershell
-uv run llama-orchestrator http
+uv run llama-mcp http
 ```
 
 Start the MCP server:
 
 ```powershell
-uv run llama-orchestrator mcp
+uv run llama-mcp mcp
 ```
 
 ### Linux
@@ -429,53 +429,53 @@ uv sync
 Bootstrap a starter catalog:
 
 ```bash
-uv run llama-orchestrator init-config
+uv run llama-mcp init-config
 ```
 
 Validate your configuration:
 
 ```bash
-uv run llama-orchestrator validate-config
+uv run llama-mcp validate-config
 ```
 
 Start the HTTP server:
 
 ```bash
-uv run llama-orchestrator http
+uv run llama-mcp http
 ```
 
 Start the MCP server:
 
 ```bash
-uv run llama-orchestrator mcp
+uv run llama-mcp mcp
 ```
 
 ## Environment Variables
 
 ### Core Server
 
-- `LLAMA_ORCH_HOST`
-- `LLAMA_ORCH_PORT`
-- `LLAMA_ORCH_API_KEY`
-- `LLAMA_ORCH_CATALOG_PATH`
-- `LLAMA_ORCH_STATE_PATH`
+- `LLAMA_MCP_HOST`
+- `LLAMA_MCP_PORT`
+- `LLAMA_MCP_API_KEY`
+- `LLAMA_MCP_CATALOG_PATH`
+- `LLAMA_MCP_STATE_PATH`
 
 ### Runtime Behavior
 
-- `LLAMA_ORCH_IDLE_SCAN_SECONDS`
-- `LLAMA_ORCH_RUNTIME_START_TIMEOUT`
-- `LLAMA_ORCH_HTTP_TIMEOUT`
-- `LLAMA_ORCH_DEFAULT_IDLE_UNLOAD`
+- `LLAMA_MCP_IDLE_SCAN_SECONDS`
+- `LLAMA_MCP_RUNTIME_START_TIMEOUT`
+- `LLAMA_MCP_HTTP_TIMEOUT`
+- `LLAMA_MCP_DEFAULT_IDLE_UNLOAD`
 
 ### Memory Policy
 
-- `LLAMA_ORCH_MIN_FREE_RAM`
-- `LLAMA_ORCH_MIN_FREE_DGPU_VRAM`
-- `LLAMA_ORCH_MIN_FREE_IGPU_RAM`
-- `LLAMA_ORCH_MAX_LOADED`
-- `LLAMA_ORCH_MAX_CONCURRENCY`
-- `LLAMA_ORCH_ALLOW_EXPERIMENTAL_IGPU`
-- `LLAMA_ORCH_ALLOW_EXPERIMENTAL_MIXED`
+- `LLAMA_MCP_MIN_FREE_RAM`
+- `LLAMA_MCP_MIN_FREE_DGPU_VRAM`
+- `LLAMA_MCP_MIN_FREE_IGPU_RAM`
+- `LLAMA_MCP_MAX_LOADED`
+- `LLAMA_MCP_MAX_CONCURRENCY`
+- `LLAMA_MCP_ALLOW_EXPERIMENTAL_IGPU`
+- `LLAMA_MCP_ALLOW_EXPERIMENTAL_MIXED`
 
 ### Backend Executables
 
@@ -496,10 +496,10 @@ uv run llama-orchestrator mcp
 ### Windows Example
 
 ```powershell
-$env:LLAMA_ORCH_HOST = "127.0.0.1"
-$env:LLAMA_ORCH_PORT = "8080"
-$env:LLAMA_ORCH_CATALOG_PATH = "C:\llama-orchestrator\catalog\catalog.yaml"
-$env:LLAMA_ORCH_STATE_PATH = "C:\llama-orchestrator\state\orchestrator.db"
+$env:LLAMA_MCP_HOST = "127.0.0.1"
+$env:LLAMA_MCP_PORT = "8080"
+$env:LLAMA_MCP_CATALOG_PATH = "C:\llama-mcp\catalog\catalog.yaml"
+$env:LLAMA_MCP_STATE_PATH = "C:\llama-mcp\state\mcp.db"
 $env:LLAMA_SERVER_CPU = "C:\llama.cpp\cpu\llama-server.exe"
 $env:LLAMA_SERVER_CUDA = "C:\llama.cpp\cuda13\llama-server.exe"
 $env:LLAMA_SERVER_VULKAN = "C:\llama.cpp\vulkan\llama-server.exe"
@@ -511,10 +511,10 @@ $env:LLAMA_BENCH_VULKAN = "C:\llama.cpp\vulkan\llama-bench.exe"
 ### Linux Example
 
 ```bash
-export LLAMA_ORCH_HOST="127.0.0.1"
-export LLAMA_ORCH_PORT="8080"
-export LLAMA_ORCH_CATALOG_PATH="$HOME/.config/llama-orchestrator/catalog.yaml"
-export LLAMA_ORCH_STATE_PATH="$HOME/.local/share/llama-orchestrator/orchestrator.db"
+export LLAMA_MCP_HOST="127.0.0.1"
+export LLAMA_MCP_PORT="8080"
+export LLAMA_MCP_CATALOG_PATH="$HOME/.config/llama-mcp/catalog.yaml"
+export LLAMA_MCP_STATE_PATH="$HOME/.local/share/llama-mcp/mcp.db"
 export LLAMA_SERVER_CPU="/opt/llama.cpp/cpu/llama-server"
 export LLAMA_SERVER_CUDA="/opt/llama.cpp/cuda/llama-server"
 export LLAMA_SERVER_VULKAN="/opt/llama.cpp/vulkan/llama-server"
@@ -606,18 +606,18 @@ aliases:
 
 ```powershell
 uv sync
-uv run llama-orchestrator init-config
+uv run llama-mcp init-config
 notepad .\catalog\catalog.yaml
-uv run llama-orchestrator validate-config
+uv run llama-mcp validate-config
 ```
 
 #### Linux
 
 ```bash
 uv sync
-uv run llama-orchestrator init-config
+uv run llama-mcp init-config
 $EDITOR ./catalog/catalog.yaml
-uv run llama-orchestrator validate-config
+uv run llama-mcp validate-config
 ```
 
 ### 2. Start the Servers
@@ -627,13 +627,13 @@ uv run llama-orchestrator validate-config
 Windows:
 
 ```powershell
-uv run llama-orchestrator http
+uv run llama-mcp http
 ```
 
 Linux:
 
 ```bash
-uv run llama-orchestrator http
+uv run llama-mcp http
 ```
 
 #### MCP
@@ -641,13 +641,13 @@ uv run llama-orchestrator http
 Windows:
 
 ```powershell
-uv run llama-orchestrator mcp
+uv run llama-mcp mcp
 ```
 
 Linux:
 
 ```bash
-uv run llama-orchestrator mcp
+uv run llama-mcp mcp
 ```
 
 ### 3. Use It as an OpenAI-Compatible Server
@@ -955,19 +955,19 @@ This is the simplest mode:
 Typical pattern:
 
 1. set environment variables in a startup script
-2. run `llama-orchestrator validate-config`
-3. start `llama-orchestrator http`
-4. optionally start `llama-orchestrator mcp`
+2. run `llama-mcp validate-config`
+3. start `llama-mcp http`
+4. optionally start `llama-mcp mcp`
 
 ### Linux Service Manager
 
 Typical pattern:
 
 1. export environment variables in a systemd unit or wrapper script
-2. run `llama-orchestrator validate-config`
-3. launch `llama-orchestrator http`
+2. run `llama-mcp validate-config`
+3. launch `llama-mcp http`
 
-If you run MCP separately, launch `llama-orchestrator mcp` under a second unit or process supervisor.
+If you run MCP separately, launch `llama-mcp mcp` under a second unit or process supervisor.
 
 ## Validation and Testing
 
@@ -1010,7 +1010,7 @@ This makes the system more portable across machines and multi-GPU setups.
 
 ### Qwen Reasoning Behavior
 
-The orchestrator already contains model-family-specific handling for Qwen-family reasoning modes. It uses server-side reasoning controls when supported and falls back to request shaping where appropriate.
+The MCP server already contains model-family-specific handling for Qwen-family reasoning modes. It uses server-side reasoning controls when supported and falls back to request shaping where appropriate.
 
 ### Experimental Paths
 
@@ -1026,9 +1026,9 @@ Experimental routes are visible on purpose. They are not hidden, but they are ma
 ## Recommended First Steps for New Users
 
 1. install dependencies
-2. run `llama-orchestrator init-config`
+2. run `llama-mcp init-config`
 3. add one local model to the catalog
-4. run `llama-orchestrator validate-config`
+4. run `llama-mcp validate-config`
 5. start the HTTP server
 6. confirm `GET /v1/models`
 7. send one OpenAI-style chat request
@@ -1039,3 +1039,4 @@ Experimental routes are visible on purpose. They are not hidden, but they are ma
 ## Project Status
 
 This project is already usable for local development and coding workflows, but it is still evolving. The architecture is intentionally designed to be robust enough for daily local use while leaving room for more compatibility polish and deeper backend validation over time.
+

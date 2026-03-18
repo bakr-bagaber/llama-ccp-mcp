@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from llama_orchestrator.hardware import HardwareProbe
-from llama_orchestrator.models import Backend, HardwareDevice, HardwareInventory
+from llama_mcp.hardware import HardwareProbe
+from llama_mcp.models import Backend, HardwareDevice, HardwareInventory
 
 
 def test_normalize_vulkan_name_strips_memory_suffix() -> None:
